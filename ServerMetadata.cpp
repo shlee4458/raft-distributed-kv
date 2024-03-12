@@ -207,6 +207,8 @@ void ServerMetadata::ReplicateLog() {
 }
 
 void ServerMetadata::RequestVote() {
+    int current_status, voted, voter_term, voter_id;
+
     voted_for = factory_id;
     vote_received.insert(factory_id);
     current_term++;
@@ -216,6 +218,8 @@ void ServerMetadata::RequestVote() {
 
     // create the RequestVoteMessage
     RequestVoteMessage msg;
+    RequestVoteResponse res;
+
     char buffer[32];
     int size = msg.Size();
     msg.SetRequestVoteMessage(factory_id, current_term, log_size, last_term);
@@ -229,7 +233,30 @@ void ServerMetadata::RequestVote() {
 
         // send the request vote message
         nei->Send(buffer, size, 0);
+
+        // receive the vote
+        res = RecvVoteResponse(nei);
+
+        // check if the vote is valid, and update the voted
+        voted = res.GetVoted();
+        voter_term = res.GetCurrentTerm();
+        voter_id = res.GetId();
+
+        if (current_term == voter_term && voted) {
+            vote_received.insert(voter_id);
+
+
+        }
+        
+
+
     }
+}
+
+void ServerMetadata::InitLeader() {
+    size = GetPeerSize();
+    this->sent_length[]
+    for ()
 }
 
 int ServerMetadata::SendIdentifier(int identifier, std::shared_ptr<ClientSocket> nei) {
@@ -277,3 +304,13 @@ int ServerMetadata::GetLastTerm() {
 bool ServerMetadata::GetVotedFor() {
     return voted_for;
 }
+
+RequestVoteResponse RecvVoteResponse(std::shared_ptr<ClientSocket> nei) {
+    RequestVoteResponse res;
+    char buffer[32];
+    int size = res.Size();
+    nei->Recv(buffer, size, 0);
+    res.Unmarshal(buffer);
+    return res;
+}
+

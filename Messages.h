@@ -175,14 +175,13 @@ public:
 
 	int GetId();
 	int GetCurrentTerm();
-	int GetLogSize();
-	int GetLastTerm();
+	int GetVoted();
 
 	void Marshal(char *buffer);
 	void Unmarshal(char *buffer);
 
 private:
-	int id, current_term, log_size, last_term;
+	int id, current_term, voted;
 };
 
 

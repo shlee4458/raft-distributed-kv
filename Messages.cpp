@@ -526,35 +526,53 @@ void RequestVoteMessage::Unmarshal(char *buffer) {
 RequestVoteResponse::RequestVoteResponse() { }
 
 void RequestVoteResponse::SetRequestVoteResponse(int id, int current_term, int voted) {
-
+	this->id = id;
+	this->current_term = current_term;
+	this->voted = voted;
 }
 
 int RequestVoteResponse::Size() {
-
+	return sizeof(id) + sizeof(current_term) + sizeof(voted);
 }
 
-
 int RequestVoteResponse::GetId() {
-
+	return id;
 }
 
 int RequestVoteResponse::GetCurrentTerm() {
-
+	return current_term;
 }
 
-int RequestVoteResponse::GetLogSize() {
-
+int RequestVoteResponse::GetVoted() {
+	return voted;
 }
-
-int RequestVoteResponse::GetLastTerm() {
-
-}
-
 
 void RequestVoteResponse::Marshal(char *buffer) {
+	int net_id = htonl(id);
+	int net_current_term = htonl(current_term);
+    int net_voted = htonl(voted);
 
+	int offset = 0;
+	memcpy(buffer + offset, &net_id, sizeof(net_id));
+	offset += sizeof(net_id);
+	memcpy(buffer + offset, &net_current_term, sizeof(net_current_term));
+	offset += sizeof(net_voted);
+	memcpy(buffer + offset, &net_voted, sizeof(net_voted));
 }
 
 void RequestVoteResponse::Unmarshal(char *buffer) {
+	int net_id;
+	int net_current_term;
+    int net_voted;
+	int offset = 0;
 
+	memcpy(&net_id, buffer + offset, sizeof(net_id));
+	offset += sizeof(net_id);
+	memcpy(&net_current_term, buffer + offset, sizeof(net_current_term));
+	offset += sizeof(net_voted);
+	memcpy(&net_voted, buffer + offset, sizeof(net_voted));
+
+	id = ntohl(net_id);
+	current_term = ntohl(net_current_term);
+    voted = ntohl(net_voted); 
 }

@@ -36,6 +36,8 @@ private:
     int voted_for;
     std::set<int> vote_received;
     int current_term;
+    int* sent_length;
+    int* ack_length;
 
     std::vector<std::shared_ptr<ServerNode>> neighbors;
     std::deque<std::shared_ptr<ClientSocket>> neighbor_sockets; // socket to the backup nodes as a primary
@@ -81,13 +83,15 @@ public:
     void AddNeighbors(std::shared_ptr<ServerNode> node);
     void InitNeighbors();
     int SendReplicationRequest(MapOp op);
+
     void ReplicateLog();
     void RequestVote();
     int SendIdentifier(int identifier, std::shared_ptr<ClientSocket> nei);
     int GetLogSize();
     int GetLastTerm();
     bool GetVotedFor();
-
+    RequestVoteResponse RecvVoteResponse(std::shared_ptr<ClientSocket> nei);
+    void InitLeader();
 };
 
 #endif

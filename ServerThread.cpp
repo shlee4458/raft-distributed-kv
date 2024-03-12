@@ -139,16 +139,16 @@ void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 	} else {
 		res.SetRequestVoteResponse(metadata->GetFactoryId(), current_term, false);
 	}
-	stub->SendVoteResponse(res);
-
 	ml.unlock();
+
+	stub->SendVoteResponse(res);
 
 	// if the vote received is a valid, 
 		// change the status to the follower
 		// set voted for to the id
 
 	// if not valid,
-		// ignore the request
+		// vote against
 }
 
 bool LaptopFactory::PfaHandler(std::shared_ptr<ServerStub> stub) {
@@ -344,13 +344,8 @@ void LaptopFactory::TimeoutThread() {
 					// request vote
 					metadata->RequestVote();
 					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
-											[&]{ return metadata->WonElection() // elected as the leader
+											[&]{ return metadata->GetStatus() == LEADER // elected as the leader
 													 || metadata->GetStatus() == FOLLOWER; }); // found leader
-
-					if (metadata->WonElection()) {
-						metadata->SetStatus(LEADER);
-					} // otherwise, stay as candidate and request again, or stay as follower
-
 				case LEADER:
 					// for every 100ms send replicatelog
 					metadata->ReplicateLog();
@@ -383,8 +378,6 @@ int LaptopFactory::GetRandomTimeout() {
 	std::uniform_int_distribution<> dist(150, 300);
 	return dist(gen);
 }
-
-
 
 void LaptopFactory::
 PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub) {
