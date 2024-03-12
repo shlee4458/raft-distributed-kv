@@ -107,14 +107,14 @@ private:
 class ReplicationRequest {
 public:
 	ReplicationRequest();
-	ReplicationRequest(int last_idx, int committed_idx, int leader_id, int op_code, int op_arg1, int op_arg2);
+	ReplicationRequest(int last_idx, int committed_idx, int leader_id, int term, int op_arg1, int op_arg2);
 	void SetRepairRequest(int last_idx, int committed_idx, int leader_id);
 	int Size();
 
 	int GetLastIdx();
 	int GetCommitedIdx();
 	int GetLeaderId();
-	int GetOpCode();
+	int GetTerm();
 	int GetArg1();
 	int GetArg2();
 	bool IsValid();
@@ -126,7 +126,7 @@ private:
     int last_idx;
     int committed_idx;
     int leader_id;
-    int op_code;
+	int term;
 	int op_arg1;
 	int op_arg2;
 };
@@ -134,12 +134,12 @@ private:
 class LeaderInfo {
 public:
 	LeaderInfo();
+	void SetLeaderInfo(std::string ip, int port);
 	int Size();
 
 	std::string GetIp();
 	int GetPort();
-	void SetLeaderInfo(std::string ip, int port);
-
+	
 	void Marshal(char *buffer);
 	void Unmarshal(char *buffer);
 	void ParseIp(std::string ip);
@@ -148,5 +148,42 @@ private:
 	int ip0, ip1, ip2, ip3;
 	int port;
 };
+
+class RequestVoteMessage {
+public:
+	RequestVoteMessage();
+	void SetRequestVoteMessage(int id, int current_term, int log_size, int last_term);
+	int Size();
+
+	int GetId();
+	int GetCurrentTerm();
+	int GetLogSize();
+	int GetLastTerm();
+
+	void Marshal(char *buffer);
+	void Unmarshal(char *buffer);
+
+private:
+	int id, current_term, log_size, last_term;
+};
+
+class RequestVoteResponse {
+public:
+	RequestVoteResponse();
+	void SetRequestVoteResponse(int id, int current_term, int voted);
+	int Size();
+
+	int GetId();
+	int GetCurrentTerm();
+	int GetLogSize();
+	int GetLastTerm();
+
+	void Marshal(char *buffer);
+	void Unmarshal(char *buffer);
+
+private:
+	int id, current_term, log_size, last_term;
+};
+
 
 #endif // #ifndef __MESSAGES_H__

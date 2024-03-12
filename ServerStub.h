@@ -25,6 +25,8 @@ public:
 	int RespondToPrimary() const;
 	int SendIsLeader(int is_leader);
 	int SendLeaderInfo(LeaderInfo info);
+	RequestVoteMessage RecvRequestVote();
+	int SendVoteResponse(RequestVoteResponse res);
 };
 
 #endif // end of #ifndef __SERVER_STUB_H__

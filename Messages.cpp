@@ -254,11 +254,11 @@ void Identifier::Unmarshal(char *buffer) {
 ReplicationRequest::ReplicationRequest()
 :last_idx(-1), committed_idx(-1), leader_id(-1) { }
 
-ReplicationRequest::ReplicationRequest(int last_idx, int committed_idx, int leader_id, int op_code, int op_arg1, int op_arg2) {
+ReplicationRequest::ReplicationRequest(int last_idx, int committed_idx, int leader_id, int term, int op_arg1, int op_arg2) {
     this->last_idx = last_idx;
     this->committed_idx = committed_idx;
     this->leader_id = leader_id;
-    this->op_code = op_code;
+    this->term = term;
 	this->op_arg1 = op_arg1;
 	this->op_arg2 = op_arg2;
 }
@@ -271,7 +271,7 @@ void ReplicationRequest::SetRepairRequest(int last_idx, int committed_idx, int l
 
 int ReplicationRequest::Size() {
 	return sizeof(last_idx) + sizeof(committed_idx) + sizeof(leader_id) 
-	+ sizeof(op_code) + sizeof(op_arg1) + sizeof(op_arg2);
+	+ sizeof(term) + sizeof(op_arg1) + sizeof(op_arg2);
 }
 
 int ReplicationRequest::GetLastIdx() {
@@ -283,8 +283,8 @@ int ReplicationRequest::GetCommitedIdx() {
 int ReplicationRequest::GetLeaderId() {
 	return leader_id;
 }
-int ReplicationRequest::GetOpCode() {
-	return op_code;
+int ReplicationRequest::GetTerm() {
+	return term;
 }
 int ReplicationRequest::GetArg1() {
 	return op_arg1;
@@ -301,7 +301,7 @@ void ReplicationRequest::Marshal(char *buffer) {
 	int net_primary_id = htonl(leader_id);
 	int net_last_idx = htonl(last_idx);
     int net_committed_idx = htonl(committed_idx);
-    int net_opcode = htonl(op_code);
+    int net_term = htonl(term);
     int net_arg1 = htonl(op_arg1);
     int net_arg2 = htonl(op_arg2);
 
@@ -312,8 +312,8 @@ void ReplicationRequest::Marshal(char *buffer) {
 	offset += sizeof(net_last_idx);
 	memcpy(buffer + offset, &net_committed_idx, sizeof(net_committed_idx));
 	offset += sizeof(net_committed_idx);
-	memcpy(buffer + offset, &net_opcode, sizeof(net_opcode));
-	offset += sizeof(net_opcode);
+	memcpy(buffer + offset, &net_term, sizeof(net_term));
+	offset += sizeof(net_term);
 	memcpy(buffer + offset, &net_arg1, sizeof(net_arg1));
     offset += sizeof(net_arg1);
 	memcpy(buffer + offset, &net_arg2, sizeof(net_arg2));
@@ -323,7 +323,7 @@ void ReplicationRequest::Unmarshal(char *buffer) {
 	int net_primary_id;
 	int net_last_idx;
     int net_committed_idx;
-    int net_opcode;
+    int net_term;
     int net_arg1;
     int net_arg2;
 	int offset = 0;
@@ -334,8 +334,8 @@ void ReplicationRequest::Unmarshal(char *buffer) {
 	offset += sizeof(net_last_idx);
 	memcpy(&net_committed_idx, buffer + offset, sizeof(net_committed_idx));
 	offset += sizeof(net_committed_idx);
-	memcpy(&net_opcode, buffer + offset, sizeof(net_opcode));
-	offset += sizeof(net_opcode);
+	memcpy(&net_term, buffer + offset, sizeof(net_term));
+	offset += sizeof(net_term);
 	memcpy(&net_arg1, buffer + offset, sizeof(net_arg1));
 	offset += sizeof(net_arg1);
 	memcpy(&net_arg2, buffer + offset, sizeof(net_arg2));				
@@ -343,7 +343,7 @@ void ReplicationRequest::Unmarshal(char *buffer) {
 	leader_id = ntohl(net_primary_id);
 	last_idx = ntohl(net_last_idx);
     committed_idx = ntohl(net_committed_idx); 
-    op_code = ntohl(net_opcode);
+    term = ntohl(net_term);
     op_arg1 = ntohl(net_arg1);
     op_arg2 = ntohl(net_arg2);
 }
@@ -353,12 +353,11 @@ std::ostream& operator<<(std::ostream& os, const ReplicationRequest& req) {
 	   << "last_idx: " << req.last_idx << ", "
        << "committed_idx: " << req.committed_idx << ", "
        << "leader_id: " << req.leader_id << ", "
-       << "op code: " << req.op_code << ", "
+       << "op code: " << req.term << ", "
 	   << "op arg1: " << req.op_arg1 << ", "
 	   << "op arg2: " << req.op_arg2 << ", " << std::endl;
     return os;
 }
-
 
 /**
  * Leader info
@@ -447,4 +446,115 @@ void LeaderInfo::ParseIp(std::string ip) {
 	ip1 = ips[1];
 	ip2 = ips[2];
 	ip3 = ips[3];
+}
+
+/**
+ * RequestVoteMessage
+*/
+
+RequestVoteMessage::RequestVoteMessage() {}
+
+void RequestVoteMessage::SetRequestVoteMessage(int id, int current_term, int log_size, int last_term) {
+	this->id = id;
+	this->current_term = current_term;
+	this->log_size = log_size;
+	this->last_term = last_term;
+}
+
+int RequestVoteMessage::Size() {
+	return sizeof(id) + sizeof(current_term) + sizeof(log_size) + sizeof(last_term);
+}
+
+int RequestVoteMessage::GetId() {
+	return id;
+}
+
+int RequestVoteMessage::GetCurrentTerm() {
+	return current_term;
+}
+
+int RequestVoteMessage::GetLogSize() {
+	return log_size;
+}
+
+int RequestVoteMessage::GetLastTerm() {
+	return last_term;
+}
+
+void RequestVoteMessage::Marshal(char *buffer) {
+	int net_id = htonl(id);
+	int net_current_term = htonl(current_term);
+    int net_log_size = htonl(log_size);
+    int net_last_term = htonl(last_term);
+
+	int offset = 0;
+	memcpy(buffer + offset, &net_id, sizeof(net_id));
+	offset += sizeof(net_id);
+	memcpy(buffer + offset, &net_current_term, sizeof(net_current_term));
+	offset += sizeof(net_current_term);
+	memcpy(buffer + offset, &net_log_size, sizeof(net_log_size));
+	offset += sizeof(net_log_size);
+	memcpy(buffer + offset, &net_last_term, sizeof(net_last_term));
+}
+
+void RequestVoteMessage::Unmarshal(char *buffer) {
+	int net_id;
+	int net_current_term;
+    int net_log_size;
+    int net_last_term;
+	int offset = 0;
+
+	memcpy(&net_id, buffer + offset, sizeof(net_id));
+	offset += sizeof(net_id);
+	memcpy(&net_current_term, buffer + offset, sizeof(net_current_term));
+	offset += sizeof(net_current_term);
+	memcpy(&net_log_size, buffer + offset, sizeof(net_log_size));
+	offset += sizeof(net_log_size);
+	memcpy(&net_last_term, buffer + offset, sizeof(net_last_term));
+	offset += sizeof(net_last_term);
+
+	id = ntohl(net_id);
+	current_term = ntohl(net_current_term);
+    log_size = ntohl(net_log_size); 
+    last_term = ntohl(net_last_term);
+}
+
+/**
+ * Request Vote Response
+*/
+
+RequestVoteResponse::RequestVoteResponse() { }
+
+void RequestVoteResponse::SetRequestVoteResponse(int id, int current_term, int voted) {
+
+}
+
+int RequestVoteResponse::Size() {
+
+}
+
+
+int RequestVoteResponse::GetId() {
+
+}
+
+int RequestVoteResponse::GetCurrentTerm() {
+
+}
+
+int RequestVoteResponse::GetLogSize() {
+
+}
+
+int RequestVoteResponse::GetLastTerm() {
+
+}
+
+
+void RequestVoteResponse::Marshal(char *buffer) {
+
+}
+
+void RequestVoteResponse::Unmarshal(char *buffer) {
+
 }

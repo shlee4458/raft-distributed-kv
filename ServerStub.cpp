@@ -81,3 +81,20 @@ int ServerStub::SendLeaderInfo(LeaderInfo info) {
 	info.Marshal(buffer);
 	return socket->Send(buffer, info.Size(), 0);
 }
+
+RequestVoteMessage ServerStub::RecvRequestVote() {
+	char buffer[32];
+	RequestVoteMessage msg;
+	if (socket->Recv(buffer, msg.Size(), 0)) {
+		msg.Unmarshal(buffer);
+		return msg;
+	}
+}
+
+int ServerStub::SendVoteResponse(RequestVoteResponse res) {
+	char buffer[32];
+	res.Marshal(buffer);
+	int size = res.Size();
+	return socket->Send(buffer, size, 0);
+
+}

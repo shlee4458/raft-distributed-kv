@@ -54,8 +54,9 @@ int main(int argc, char *argv[]) {
 
 	}
 
-	// give 5 seconds to allow all servers to boot
+	// give 5 seconds to allow all servers to boot, and connect with the neighbors
 	std::this_thread::sleep_for(std::chrono::seconds(5));
+	metadata->InitNeighbors(); 
 
 	// create the primary admin thread
 	std::thread pfa_thread(&LaptopFactory::PrimaryAdminThread, 

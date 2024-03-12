@@ -35,12 +35,16 @@ private:
 	std::mutex rep_lock;
 	std::mutex stub_lock;
 	std::mutex meta_lock;
+	std::mutex timeout_lock;
 
 	std::condition_variable erq_cv;
 	std::condition_variable rep_cv;
+	std::condition_variable timeout_cv;
 
 	std::shared_ptr<ServerMetadata> metadata;
 	std::vector<std::shared_ptr<ServerStub>> stubs;
+
+	bool heartbeat = false;
 
 	LaptopInfo GetLaptopInfo(CustomerRequest order, int engineer_id);
 	LaptopInfo CreateLaptop(CustomerRequest order, int engineer_id, std::shared_ptr<ServerStub> stub);
@@ -52,6 +56,8 @@ private:
 
 	void PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub);
 	void IdleMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary);
+
+	int GetRandomTimeout();
 
 public:
 	void EngineerThread(std::shared_ptr<ServerSocket> socket, 

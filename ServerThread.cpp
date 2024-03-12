@@ -14,6 +14,7 @@
 #define FOLLOWER 1
 #define LEADER 2
 #define CANDIDATE 3
+#define HEARTBEAT_TIME 100
 
 #define DEBUG 0
 
@@ -105,6 +106,49 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 
 void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 
+	std::unique_lock<std::mutex> ml(meta_lock, std::defer_lock);
+
+	// wait for the message to be sent
+	RequestVoteMessage msg;
+	msg = stub->RecvRequestVote();
+	int cand_id = msg.GetId();
+	int cand_current_term = msg.GetCurrentTerm();
+	int cand_log_size = msg.GetLogSize();
+	int cand_last_term = msg.GetLastTerm();
+
+	// if more higher term candidate vote is received
+	ml.lock();
+	if (cand_current_term > metadata->GetCurrentTerm()) {
+		metadata->SetCurrentTerm(cand_current_term);
+		metadata->SetStatus(FOLLOWER);
+		metadata->SetVotedFor(cand_id);
+	}
+	
+	int last_term = metadata->GetLastTerm();
+	int log_size = metadata->GetLogSize();
+	int current_term = metadata->GetCurrentTerm();
+	bool voted_for = metadata->GetVotedFor();
+	
+	bool valid = (cand_last_term > last_term) || 
+				((cand_last_term == last_term) && cand_log_size >= log_size);
+
+	RequestVoteResponse res;
+
+	if (valid && cand_current_term == current_term && voted_for) {
+		res.SetRequestVoteResponse(metadata->GetFactoryId(), current_term, true);
+	} else {
+		res.SetRequestVoteResponse(metadata->GetFactoryId(), current_term, false);
+	}
+	stub->SendVoteResponse(res);
+
+	ml.unlock();
+
+	// if the vote received is a valid, 
+		// change the status to the follower
+		// set voted for to the id
+
+	// if not valid,
+		// ignore the request
 }
 
 bool LaptopFactory::PfaHandler(std::shared_ptr<ServerStub> stub) {
@@ -276,18 +320,42 @@ void LaptopFactory::IdleAdminThread(int id) {
 
 
 void LaptopFactory::TimeoutThread() {
+	int timeout;
+	std::unique_lock<std::mutex> tl(timeout_lock, std::defer_lock);
+
 	// if the current state is;
 	while (true) {
 		switch (metadata->GetStatus())
 			{
+				timeout = GetRandomTimeout();
 				case FOLLOWER:
-					
+					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return heartbeat; });
+
+					if (heartbeat) {
+						std::cout << "Heartbeat was received!" << std::endl;
+						heartbeat = false;
+					} else {
+						metadata->SetStatus(CANDIDATE);
+					}
 					break;
-				
-				case LEADER:
-					break;
-				
+
 				case CANDIDATE:
+					// vote for itself
+					// request vote
+					metadata->RequestVote();
+					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
+											[&]{ return metadata->WonElection() // elected as the leader
+													 || metadata->GetStatus() == FOLLOWER; }); // found leader
+
+					if (metadata->WonElection()) {
+						metadata->SetStatus(LEADER);
+					} // otherwise, stay as candidate and request again, or stay as follower
+
+				case LEADER:
+					// for every 100ms send replicatelog
+					metadata->ReplicateLog();
+					timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
+											[&]{ return metadata->GetStatus() == FOLLOWER; });
 					break;
 			}
 			
@@ -309,7 +377,7 @@ void LaptopFactory::TimeoutThread() {
 	}
 }
 
-int LaptopFactory::GetRandomInt() {
+int LaptopFactory::GetRandomTimeout() {
 	std::random_device rd;
 	std::mt19937 gen(rd());
 	std::uniform_int_distribution<> dist(150, 300);
@@ -323,7 +391,7 @@ PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerS
 	
 	int response_received, prev_last_idx, prev_commited_idx;
 	MapOp op;
-	op.opcode = 1;
+	op.term = 1;
 	op.arg1 = customer_id;
 	op.arg2 = order_num;
 	prev_last_idx = metadata->GetLastIndex();
@@ -351,7 +419,7 @@ void LaptopFactory::
 IdleMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary) {
 
 	MapOp op;
-	op.opcode = 1;
+	op.term = 1;
 	op.arg1 = customer_id;
 	op.arg2 = order_num;
 

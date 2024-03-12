@@ -5,10 +5,11 @@
 #include <iostream>
 
 #define PFA_IDENTIFIER 1
+#define CANDIDATE_IDENTIFIER 3
 #define DEBUG 0
 
 ServerMetadata::ServerMetadata() 
-: last_idx(-1), committed_idx(-1), leader_id(-1), factory_id(-1), neighbors() { }
+: last_idx(-1), committed_idx(-1), leader_id(-1), factory_id(-1), neighbors(), voted_for(-1), current_term(0) { }
 
 int ServerMetadata::GetLeaderId() {
     return leader_id;
@@ -34,12 +35,8 @@ int ServerMetadata::GetPeerSize() {
     return neighbors.size();
 }
 
-std::deque<std::shared_ptr<ServerNode>> ServerMetadata::GetFailedNeighbors() {
-    return failed_neighbors;
-}
-
-std::deque<std::shared_ptr<ClientSocket>> ServerMetadata::GetPrimarySockets() {
-    return primary_sockets;
+std::deque<std::shared_ptr<ClientSocket>> ServerMetadata::GetNeighborSockets() {
+    return neighbor_sockets;
 }
 
 std::vector<MapOp> ServerMetadata::GetLog() {
@@ -61,7 +58,7 @@ int ServerMetadata::GetValue(int customer_id) {
 }
 
 ReplicationRequest ServerMetadata::GetReplicationRequest(MapOp op) {
-    int op_code = op.opcode;
+    int op_code = op.term;
     int op_arg1 = op.arg1;
     int op_arg2 = op.arg2;
     return ReplicationRequest(last_idx, committed_idx, leader_id, op_code, op_arg1, op_arg2);
@@ -109,10 +106,6 @@ void ServerMetadata::ExecuteLog(int idx) {
     return;
 }
 
-bool ServerMetadata::WasBackup() {
-    return leader_id != -1;
-}
-
 bool ServerMetadata::IsLeader() {
     return leader_id == factory_id;
 }
@@ -124,8 +117,7 @@ void ServerMetadata::AddNeighbors(std::shared_ptr<ServerNode> node) {
 void ServerMetadata::InitNeighbors() {
 
     // corner case: primary -> idle -> primary; empty the sockets and failed
-    primary_sockets.clear();
-    failed_neighbors.clear();
+    neighbor_sockets.clear();
 
 	std::string ip;
 	int port;
@@ -136,32 +128,9 @@ void ServerMetadata::InitNeighbors() {
 		std::shared_ptr<ClientSocket> socket = std::make_shared<ClientSocket>();
 		if (socket->Init(ip, port)) { // if connection is successful
             socket_node[socket] = node;
-            SendIdentifier(socket);
-            primary_sockets.push_back(std::move(socket));
-        } else { // if there is a failed server, add to the deque
-            failed_neighbors.push_back(node);
+            neighbor_sockets.push_back(std::move(socket));
         }
 	}
-}
-
-int ServerMetadata::SendIdentifier(std::shared_ptr<ClientSocket> socket) {
-
-	// send identifier to the idle server
-	char identifier_buffer[4];
-	int identifier_size;
-	auto identifier = std::shared_ptr<Identifier>(new Identifier());
-
-	identifier->SetIdentifier(PFA_IDENTIFIER);
-	identifier->Marshal(identifier_buffer); // store the identifier value in the buffer
-	identifier_size = identifier->Size();
-
-    if (DEBUG) {
-        std::cout << "There is a peer" << std::endl;
-    }
-    if (!socket->Send(identifier_buffer, identifier_size)) {
-        return 0; // failed to send an identifier to an idle server
-    }
-	return 1;
 }
 
 int ServerMetadata::SendReplicationRequest(MapOp op) {
@@ -174,23 +143,13 @@ int ServerMetadata::SendReplicationRequest(MapOp op) {
 	request.Marshal(buffer);
 	size = request.Size();
 
-	int total_response = failed_neighbors.size();
+	int total_response = 0;
 	char response_buffer[4];
 	Identifier identifier;
     std::deque<std::shared_ptr<ClientSocket>> new_primary_sockets;
 
     // iterate over all the neighbor nodes, and send the replication request
-	for (auto const& socket : primary_sockets) {
-
-		// if any one of the idle servers failed
-			// consider response was received
-			// continue sending it to the other idle servers
-            // update the failed_neighbor to include the current failed server node
-		if (!socket->Send(buffer, size, 0)) {
-            failed_neighbors.push_back(socket_node[socket]);
-			total_response++;
-			continue;
-		}
+	for (auto const& socket : neighbor_sockets) {
 
 		if (socket->Recv(response_buffer, sizeof(identifier), 0)) {
 			identifier.Unmarshal(response_buffer);
@@ -200,7 +159,7 @@ int ServerMetadata::SendReplicationRequest(MapOp op) {
 	}
 
     // update with the sockets excluding failed sockets
-    primary_sockets = new_primary_sockets; 
+    neighbor_sockets = new_primary_sockets; 
     if (DEBUG) {
         std::cout << request << std::endl;
     }
@@ -241,4 +200,80 @@ int ServerMetadata::GetStatus() {
 
 void ServerMetadata::SetStatus(int status) {
     this->status = status;
+}
+
+void ServerMetadata::ReplicateLog() {
+
+}
+
+void ServerMetadata::RequestVote() {
+    voted_for = factory_id;
+    vote_received.insert(factory_id);
+    current_term++;
+
+    int log_size = GetLogSize();
+    int last_term = GetLastTerm();
+
+    // create the RequestVoteMessage
+    RequestVoteMessage msg;
+    char buffer[32];
+    int size = msg.Size();
+    msg.SetRequestVoteMessage(factory_id, current_term, log_size, last_term);
+    msg.Marshal(buffer);
+
+    // request vote to all the neighbors
+    for (std::shared_ptr<ClientSocket> nei : GetNeighborSockets()) {
+
+        // send the identifier that it is the request vote
+        SendIdentifier(CANDIDATE_IDENTIFIER, nei);
+
+        // send the request vote message
+        nei->Send(buffer, size, 0);
+    }
+}
+
+int ServerMetadata::SendIdentifier(int identifier, std::shared_ptr<ClientSocket> nei) {
+	Identifier iden;
+    iden.SetIdentifier(identifier);
+    char buffer[4];
+    int size = iden.Size();
+    iden.Marshal(buffer);
+    return nei->Send(buffer, size, 0);
+}
+
+int ServerMetadata::GetVoteReceivedSize() {
+    return vote_received.size();
+}
+
+bool ServerMetadata::WonElection() {
+    return GetVoteReceivedSize() > GetPeerSize() * 2;
+}
+
+int ServerMetadata::GetCurrentTerm() {
+    return current_term;
+}
+
+void ServerMetadata::SetCurrentTerm(int term) {
+    current_term = term;
+}
+
+void ServerMetadata::SetVotedFor(int id) {
+    voted_for = id;
+}
+
+int ServerMetadata::GetLogSize() {
+    return smr_log.size();
+}
+
+int ServerMetadata::GetLastTerm() {
+    int last_term = 0;
+    int log_size = GetLogSize();
+    if (log_size) {
+        last_term = smr_log[log_size - 1].term;
+    }
+    return last_term;
+}
+
+bool ServerMetadata::GetVotedFor() {
+    return voted_for;
 }

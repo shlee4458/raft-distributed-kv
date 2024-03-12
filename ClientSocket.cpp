@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -9,10 +10,11 @@
 
 int ClientSocket::Init(std::string ip, int port) {
 	if (is_initialized_) {
-		return 0;
+		close(fd_);
+		// return 0;
 	}
 	struct sockaddr_in addr;
-	fd_ = socket(AF_INET, SOCK_STREAM, 0);
+	fd_ = socket(AF_INET, SOCK_STREAM, 0); 
 	if (fd_ < 0) {
 		perror("ERROR: failed to create a socket");
 		return 0;
