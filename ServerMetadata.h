@@ -27,9 +27,10 @@ class ServerMetadata {
 private:
     int last_idx;
     int committed_idx;
-    int primary_id;
+    int leader_id;
     int factory_id;
-    bool is_primary = false;
+    bool is_leader = false;
+    int status = 1;
     std::vector<std::shared_ptr<ServerNode>> neighbors;
     std::deque<std::shared_ptr<ClientSocket>> primary_sockets; // socket to the backup nodes as a primary
     std::map<int, int> customer_record;
@@ -40,7 +41,7 @@ private:
 public:
     ServerMetadata();
 
-    int GetPrimaryId();
+    int GetLeaderId();
     int GetFactoryId();
     int GetLastIndex();
     int GetCommittedIndex();
@@ -52,23 +53,25 @@ public:
     std::deque<std::shared_ptr<ServerNode>> GetFailedNeighbors();
     int GetValue(int customer_id);
     ReplicationRequest GetReplicationRequest(MapOp op);
+    std::shared_ptr<ServerNode> GetLeader();
+    std::string GetLeaderIp();
+    int GetLeaderPort();
+    int GetStatus();
 
     void SetFactoryId(int id);
-    void SetPrimaryId(int id);
+    void SetLeaderId(int id);
     void UpdateLastIndex(int idx);
     void UpdateCommitedIndex(int idx);
+    void SetStatus(int status);
     void AppendLog(MapOp op);
     void ExecuteLog(int idx);
-    
 
     bool WasBackup();
-    bool IsPrimary();
+    bool IsLeader();
 
     void AddNeighbors(std::shared_ptr<ServerNode> node);
     void InitNeighbors();
-    void RepairFailedServers();
     int SendReplicationRequest(MapOp op);
-    int Repair(std::shared_ptr<ClientSocket> socket);
     int SendIdentifier(std::shared_ptr<ClientSocket> socket);
 };
 

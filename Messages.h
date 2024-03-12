@@ -107,13 +107,13 @@ private:
 class ReplicationRequest {
 public:
 	ReplicationRequest();
-	ReplicationRequest(int last_idx, int committed_idx, int primary_id, int op_code, int op_arg1, int op_arg2);
-	void SetRepairRequest(int last_idx, int committed_idx, int primary_id);
+	ReplicationRequest(int last_idx, int committed_idx, int leader_id, int op_code, int op_arg1, int op_arg2);
+	void SetRepairRequest(int last_idx, int committed_idx, int leader_id);
 	int Size();
 
 	int GetLastIdx();
 	int GetCommitedIdx();
-	int GetPrimaryId();
+	int GetLeaderId();
 	int GetOpCode();
 	int GetArg1();
 	int GetArg2();
@@ -125,10 +125,28 @@ public:
 private:
     int last_idx;
     int committed_idx;
-    int primary_id;
+    int leader_id;
     int op_code;
 	int op_arg1;
 	int op_arg2;
+};
+
+class LeaderInfo {
+public:
+	LeaderInfo();
+	int Size();
+
+	std::string GetIp();
+	int GetPort();
+	void SetLeaderInfo(std::string ip, int port);
+
+	void Marshal(char *buffer);
+	void Unmarshal(char *buffer);
+	void ParseIp(std::string ip);
+
+private:
+	int ip0, ip1, ip2, ip3;
+	int port;
 };
 
 #endif // #ifndef __MESSAGES_H__

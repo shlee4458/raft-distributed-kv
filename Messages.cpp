@@ -1,6 +1,7 @@
 #include <cstring>
 #include <iostream>
 #include <arpa/inet.h>
+#include <vector>
 
 #include "Messages.h"
 
@@ -251,25 +252,25 @@ void Identifier::Unmarshal(char *buffer) {
  * Replication Message
 */
 ReplicationRequest::ReplicationRequest()
-:last_idx(-1), committed_idx(-1), primary_id(-1) { }
+:last_idx(-1), committed_idx(-1), leader_id(-1) { }
 
-ReplicationRequest::ReplicationRequest(int last_idx, int committed_idx, int primary_id, int op_code, int op_arg1, int op_arg2) {
+ReplicationRequest::ReplicationRequest(int last_idx, int committed_idx, int leader_id, int op_code, int op_arg1, int op_arg2) {
     this->last_idx = last_idx;
     this->committed_idx = committed_idx;
-    this->primary_id = primary_id;
+    this->leader_id = leader_id;
     this->op_code = op_code;
 	this->op_arg1 = op_arg1;
 	this->op_arg2 = op_arg2;
 }
 
-void ReplicationRequest::SetRepairRequest(int last_idx, int committed_idx, int primary_id) {
+void ReplicationRequest::SetRepairRequest(int last_idx, int committed_idx, int leader_id) {
     this->last_idx = last_idx;
     this->committed_idx = committed_idx;
-    this->primary_id = primary_id;
+    this->leader_id = leader_id;
 }
 
 int ReplicationRequest::Size() {
-	return sizeof(last_idx) + sizeof(committed_idx) + sizeof(primary_id) 
+	return sizeof(last_idx) + sizeof(committed_idx) + sizeof(leader_id) 
 	+ sizeof(op_code) + sizeof(op_arg1) + sizeof(op_arg2);
 }
 
@@ -279,8 +280,8 @@ int ReplicationRequest::GetLastIdx() {
 int ReplicationRequest::GetCommitedIdx() {
 	return committed_idx;
 }
-int ReplicationRequest::GetPrimaryId() {
-	return primary_id;
+int ReplicationRequest::GetLeaderId() {
+	return leader_id;
 }
 int ReplicationRequest::GetOpCode() {
 	return op_code;
@@ -297,7 +298,7 @@ bool ReplicationRequest::IsValid() {
 }
 
 void ReplicationRequest::Marshal(char *buffer) {
-	int net_primary_id = htonl(primary_id);
+	int net_primary_id = htonl(leader_id);
 	int net_last_idx = htonl(last_idx);
     int net_committed_idx = htonl(committed_idx);
     int net_opcode = htonl(op_code);
@@ -339,7 +340,7 @@ void ReplicationRequest::Unmarshal(char *buffer) {
 	offset += sizeof(net_arg1);
 	memcpy(&net_arg2, buffer + offset, sizeof(net_arg2));				
 
-	primary_id = ntohl(net_primary_id);
+	leader_id = ntohl(net_primary_id);
 	last_idx = ntohl(net_last_idx);
     committed_idx = ntohl(net_committed_idx); 
     op_code = ntohl(net_opcode);
@@ -351,9 +352,99 @@ std::ostream& operator<<(std::ostream& os, const ReplicationRequest& req) {
     os << "**** This is ths replication request ****\n"
 	   << "last_idx: " << req.last_idx << ", "
        << "committed_idx: " << req.committed_idx << ", "
-       << "primary_id: " << req.primary_id << ", "
+       << "leader_id: " << req.leader_id << ", "
        << "op code: " << req.op_code << ", "
 	   << "op arg1: " << req.op_arg1 << ", "
 	   << "op arg2: " << req.op_arg2 << ", " << std::endl;
     return os;
+}
+
+
+/**
+ * Leader info
+*/
+LeaderInfo::LeaderInfo()
+: ip0(0), ip1(0), ip2(0), ip3(0), port(0) {	}
+
+void LeaderInfo::SetLeaderInfo(std::string ip, int port) {
+	this->port = port;
+	ParseIp(ip);
+}
+
+int LeaderInfo::Size() {
+	return sizeof(ip0) + sizeof(ip1) + sizeof(ip2) + sizeof(ip3) + sizeof(port);
+}
+
+std::string LeaderInfo::GetIp() {
+	return std::to_string(ip0) + "." + std::to_string(ip1) + "." + std::to_string(ip2) + "." + std::to_string(ip3);
+}
+
+int LeaderInfo::GetPort() {
+	return port;
+}
+
+void LeaderInfo::Marshal(char *buffer) {
+	int net_ip0 = htonl(ip0);
+	int net_ip1 = htonl(ip1);
+    int net_ip2 = htonl(ip2);
+    int net_ip3 = htonl(ip3);
+	int net_port = htonl(port);
+
+	int offset = 0;
+	memcpy(buffer + offset, &net_ip0, sizeof(net_ip0));
+	offset += sizeof(net_ip0);
+	memcpy(buffer + offset, &net_ip1, sizeof(net_ip1));
+	offset += sizeof(net_ip1);
+	memcpy(buffer + offset, &net_ip2, sizeof(net_ip2));
+	offset += sizeof(net_ip2);
+	memcpy(buffer + offset, &net_ip3, sizeof(net_ip3));
+	offset += sizeof(net_ip3);
+	memcpy(buffer + offset, &port, sizeof(port));
+}
+
+void LeaderInfo::Unmarshal(char *buffer) {
+	int net_ip0;
+	int net_ip1;
+    int net_ip2;
+    int net_ip3;
+	int net_port;
+	int offset = 0;
+
+	memcpy(&net_ip0, buffer + offset, sizeof(net_ip0));
+	offset += sizeof(net_ip0);
+	memcpy(&net_ip1, buffer + offset, sizeof(net_ip1));
+	offset += sizeof(net_ip1);
+	memcpy(&net_ip2, buffer + offset, sizeof(net_ip2));
+	offset += sizeof(net_ip2);
+	memcpy(&net_ip3, buffer + offset, sizeof(net_ip3));
+	offset += sizeof(net_ip3);
+	memcpy(&net_port, buffer + offset, sizeof(net_port));
+	offset += sizeof(net_port);
+
+	ip0 = ntohl(net_ip0);
+	ip1 = ntohl(net_ip0);
+    ip2 = ntohl(net_ip0); 
+    ip3 = ntohl(net_ip0);
+    net_port = ntohl(net_port);
+}
+
+void LeaderInfo::ParseIp(std::string ip) {
+	
+	// iterate over the string and add the substring delimited with the . as a single
+	int cur_num = 0;
+	std::vector<int> ips;
+	for (char c : ip) {
+		if (c == '.') {
+			ips.push_back(cur_num);
+			cur_num = 0;
+			continue;
+		}
+		cur_num = cur_num * 10 + (c - '0');
+		
+	}
+	ips.push_back(cur_num);
+	ip0 = ips[0];
+	ip1 = ips[1];
+	ip2 = ips[2];
+	ip3 = ips[3];
 }

@@ -1,16 +1,21 @@
 #include <iostream>
 #include <memory>
 #include <map>
+#include <random>
 
 #include "ServerThread.h"
 
 #define PFA_IDENTIFIER 1
 #define CUSTOMER_IDENTIFIER 2
+#define CANDIDATE_IDENTIFIER 3
 #define UPDATE_REQUEST 1
 #define READ_REQUEST 2
 
+#define FOLLOWER 1
+#define LEADER 2
+#define CANDIDATE 3
+
 #define DEBUG 0
-#define REPAIR 1
 
 LaptopInfo LaptopFactory::
 GetLaptopInfo(CustomerRequest request, int engineer_id) {
@@ -86,11 +91,20 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 				}
 				return;
 				break;
+			case CANDIDATE_IDENTIFIER:
+				if (DEBUG) {
+					std::cout << "Received a vote request from a Candidate!!" << std::endl;
+				}
+				CandidateVoteHandler(std::move(stub));
 			default:
 				return;
 				break;
 		}
 	}
+}
+
+void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
+
 }
 
 bool LaptopFactory::PfaHandler(std::shared_ptr<ServerStub> stub) {
@@ -99,9 +113,9 @@ bool LaptopFactory::PfaHandler(std::shared_ptr<ServerStub> stub) {
 	while (true) {
 		request = stub->ReceiveReplication();
 		
-		// Primary Failure: set the primary_id to -1
+		// Primary Failure: set the leader_id to -1
 		if (!request.IsValid()) {
-			metadata->SetPrimaryId(-1);
+			metadata->SetLeaderId(-1);
 			std::cout << "Primary Server went down, gracefully exiting" << std::endl;
 			return 0;
 		}
@@ -127,15 +141,18 @@ void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub>
 	LaptopInfo laptop;
 	int request_type, customer_id, order_num;
 
-	// if current is primary server, 
-		// upon receiving the customer update request, repair the failed servers
-	ml.lock();
-	if (metadata->IsPrimary()) {
-		if (REPAIR) {
-			metadata->RepairFailedServers();
-		}
+	// let the customer know if leader or not
+	stub->SendIsLeader(metadata->IsLeader());
+
+	if (!metadata->IsLeader()) {
+		// tell the client that the order to be sent to this
+		// INVARIABLE: there is always a leader when the client is sending an update request
+		std::string ip = metadata->GetLeaderIp();
+		int port = metadata->GetLeaderPort();
+		LeaderInfo info;
+		info.SetLeaderInfo(ip, port);
+		stub->SendLeaderInfo(info);
 	}
-	ml.unlock();
 
 	while (true) {
 		request = stub->ReceiveRequest();
@@ -144,20 +161,11 @@ void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub>
 		}
 		request_type = request.GetRequestType();
 		switch (request_type) {
-			case UPDATE_REQUEST: // PFA only
-				ml.lock();
-				if (!metadata->IsPrimary()) { // Idle -> Primary
-					metadata->SetPrimaryId(metadata->GetFactoryId()); // set itself as the primary
-					metadata->InitNeighbors(); // create connection and send identifier
-					if (DEBUG) {
-						std::cout << "I wasn't primary! Priamry Id updated!!" << std::endl;
-					}
-				}
-				ml.unlock();
+			case UPDATE_REQUEST:
 				laptop = CreateLaptop(request, engineer_id, stub);
 				stub->ShipLaptop(laptop);
 				break;
-			case READ_REQUEST: // both PFA, IFA
+			case READ_REQUEST:
 				laptop = GetLaptopInfo(request, engineer_id);
 				customer_id = laptop.GetCustomerId();
 				if (DEBUG) {
@@ -218,7 +226,7 @@ void LaptopFactory::IdleAdminThread(int id) {
 								 ml(meta_lock, std::defer_lock);
 	std::shared_ptr<ServerStub> stub;
 
-	int last_idx, committed_idx, primary_id;
+	int last_idx, committed_idx, leader_id;
 	int customer_id, order_num;
 
 	while (true) {
@@ -236,7 +244,7 @@ void LaptopFactory::IdleAdminThread(int id) {
 		// get the information
 		last_idx = request->repl_request.GetLastIdx();
 		committed_idx = request->repl_request.GetCommitedIdx();
-		primary_id = request->repl_request.GetPrimaryId();
+		leader_id = request->repl_request.GetLeaderId();
 		customer_id = request->repl_request.GetArg1();
 		order_num = request->repl_request.GetArg2();
 		stub = request->stub;
@@ -245,13 +253,13 @@ void LaptopFactory::IdleAdminThread(int id) {
 		}
 		
 		// check if the current server was the primary
-		bool was_primary = metadata->IsPrimary();
+		bool was_primary = metadata->IsLeader();
 
 		// update the metadata; commited index, last index
 		if (was_primary) {
-			metadata->SetPrimaryId(primary_id);
+			metadata->SetLeaderId(leader_id);
 			if (DEBUG) {
-				std::cout << "I have set the primary id to: " << primary_id << std::endl;
+				std::cout << "I have set the primary id to: " << leader_id << std::endl;
 			}
 		}
 		ml.lock();
@@ -265,6 +273,50 @@ void LaptopFactory::IdleAdminThread(int id) {
 		}
 	}
 }
+
+
+void LaptopFactory::TimeoutThread() {
+	// if the current state is;
+	while (true) {
+		switch (metadata->GetStatus())
+			{
+				case FOLLOWER:
+					
+					break;
+				
+				case LEADER:
+					break;
+				
+				case CANDIDATE:
+					break;
+			}
+			
+			// follower; give random 150~300ms timeout
+				// if LogRequest was received, reset the timer
+
+			// candidate; give random 150~300ms timeout
+				// if LogRequest was received and it is valid
+				// change the current state to the follower
+
+				// if timeout without change of state
+				// send RequestVoteRPC
+
+			// leader; send heartbeat to all the followers
+				// if LogRequest was received and it is valid
+				// change the current state to the follower
+
+				// Send heartbeat in every 100ms
+	}
+}
+
+int LaptopFactory::GetRandomInt() {
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<> dist(150, 300);
+	return dist(gen);
+}
+
+
 
 void LaptopFactory::
 PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub) {

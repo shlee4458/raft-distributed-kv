@@ -8,10 +8,10 @@
 #define DEBUG 0
 
 ServerMetadata::ServerMetadata() 
-: last_idx(-1), committed_idx(-1), primary_id(-1), factory_id(-1), neighbors() { }
+: last_idx(-1), committed_idx(-1), leader_id(-1), factory_id(-1), neighbors() { }
 
-int ServerMetadata::GetPrimaryId() {
-    return primary_id;
+int ServerMetadata::GetLeaderId() {
+    return leader_id;
 }
 
 int ServerMetadata::GetFactoryId() {
@@ -64,11 +64,11 @@ ReplicationRequest ServerMetadata::GetReplicationRequest(MapOp op) {
     int op_code = op.opcode;
     int op_arg1 = op.arg1;
     int op_arg2 = op.arg2;
-    return ReplicationRequest(last_idx, committed_idx, primary_id, op_code, op_arg1, op_arg2);
+    return ReplicationRequest(last_idx, committed_idx, leader_id, op_code, op_arg1, op_arg2);
 }
 
-void ServerMetadata::SetPrimaryId(int id) {
-	primary_id = id;
+void ServerMetadata::SetLeaderId(int id) {
+	leader_id = id;
     return;
 }
 
@@ -110,11 +110,11 @@ void ServerMetadata::ExecuteLog(int idx) {
 }
 
 bool ServerMetadata::WasBackup() {
-    return primary_id != -1;
+    return leader_id != -1;
 }
 
-bool ServerMetadata::IsPrimary() {
-    return primary_id == factory_id;
+bool ServerMetadata::IsLeader() {
+    return leader_id == factory_id;
 }
 
 void ServerMetadata::AddNeighbors(std::shared_ptr<ServerNode> node) {
@@ -217,58 +217,28 @@ int ServerMetadata::SendReplicationRequest(MapOp op) {
     return 1;
 }
 
-void ServerMetadata::RepairFailedServers() {
-
-	std::string ip;
-	int port;
-    std::deque<std::shared_ptr<ServerNode>> new_failed;
-	for (const auto& node : GetFailedNeighbors()) {
-		port = node->port;
-		ip = node->ip;
-        std::cout << "Looping for all the failed neighbors" << std::endl;
-		std::shared_ptr<ClientSocket> socket = std::make_shared<ClientSocket>();
-		if (socket->Init(ip, port)) { // if the failed server came back on
-            std::cout << "Came back on!" << std::endl;
-            SendIdentifier(socket);
-            if (!Repair(socket)) { // repair was unsuccessful
-                new_failed.push_back(node);
-                continue;
-            }
-            primary_sockets.push_back(std::move(socket));
-        } else { // if there is a failed server, add to the deque
-            new_failed.push_back(node);
+std::shared_ptr<ServerNode> ServerMetadata::GetLeader() {
+    for (std::shared_ptr<ServerNode> nei: GetNeighbors()) {
+        if (nei->id == GetLeaderId()) {
+            return nei;
         }
-	}
-    failed_neighbors = new_failed;
+    }
 }
 
-int ServerMetadata::Repair(std::shared_ptr<ClientSocket> socket) {
+std::string ServerMetadata::GetLeaderIp() {
+    std::shared_ptr<ServerNode> leader = GetLeader();
+    return leader->ip;
+}
 
-    // send all the mapops stored in the smr_log
-	char buffer[32];
-    int size;
-    ReplicationRequest request;
-    MapOp op;
+int ServerMetadata::GetLeaderPort() {
+    std::shared_ptr<ServerNode> leader = GetLeader();
+    return leader->port;
+}
 
-	char response_buffer[4];
-	Identifier identifier;
-    std::cout << "repairing!" << std::endl;
-    // get replication request object
-    for (auto i = 0u; i < smr_log.size(); i++) {
-        op = smr_log[i];
-        request = GetReplicationRequest(op);
-        request.SetRepairRequest(i, i - 1, primary_id);
-        request.Marshal(buffer);
-        size = request.Size();        
+int ServerMetadata::GetStatus() {
+    return status;
+}
 
-		if (!socket->Send(buffer, size, 0)) { // repair was not successful
-			return 0;
-		}
-
-        // receive the ACK message
-		if (socket->Recv(response_buffer, sizeof(identifier), 0)) {
-			identifier.Unmarshal(response_buffer);
-		}
-    }
-    return 1; // successful repair
+void ServerMetadata::SetStatus(int status) {
+    this->status = status;
 }

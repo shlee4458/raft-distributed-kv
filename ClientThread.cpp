@@ -8,6 +8,8 @@
 #define CLIENT_IDENTIFIER 2
 #define LAPTOP_DEFAULT -1
 #define RECORD_DEFAULT -2
+#define FOLLOWER 1
+#define LEADER 2
 
 ClientThreadClass::ClientThreadClass() {}
 
@@ -17,6 +19,7 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 	LaptopInfo laptop;
 	CustomerRecord record;
 	Identifier identifier;
+	int is_leader;
 
 	this->customer_id = customer_id;
 	this->num_requests = num_requests;
@@ -29,10 +32,27 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 
 	// send the one-time identifier first
 	identifier.SetIdentifier(CLIENT_IDENTIFIER);
-	if (stub.SendIdentifier(identifier)) {
-		std::cout << "Successfully sent identifier" << std::endl;
-	} else {
-		std::cout << "identifier not sent" << std::endl;
+	stub.SendIdentifier(identifier);
+	is_leader = stub.RecvIsLeader();
+	switch (is_leader)
+	{
+		case LEADER:
+			break;
+		case FOLLOWER:
+			// receive the ip, port from the follower
+			LeaderInfo info;
+			info = stub.RecvLeaderInfo();
+			ip = info.GetIp();
+			port = info.GetPort();
+
+			if (!stub.Init(ip, port)) {
+				std::cout << "Thread " << customer_id << " failed to connect" << std::endl;
+				return;
+			}			
+			break;
+		default:
+			std::cout << "identifier not sent" << std::endl;
+			break;
 	}
 
 	for (int i = 0; i < num_requests; i++) {
@@ -40,6 +60,7 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 		// based on the request_type, call different RPC
 		switch (request_type) {
 			case UPDATE_REQUEST:
+
 				request.SetRequest(customer_id, i, UPDATE_REQUEST);
 				laptop = stub.Order(request);
 
@@ -74,4 +95,3 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 ClientTimer ClientThreadClass::GetTimer() {
 	return timer;	
 }
-

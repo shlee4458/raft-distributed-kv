@@ -15,6 +15,8 @@ public:
 	LaptopInfo Order(CustomerRequest request);
 	CustomerRecord ReadRecord(CustomerRequest request);
 	int SendIdentifier(Identifier identifier);
+	LeaderInfo RecvLeaderInfo();
+	int RecvIsLeader();
 };
 
 #endif // end of #ifndef __CLIENT_STUB_H__

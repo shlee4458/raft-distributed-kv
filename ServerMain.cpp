@@ -3,6 +3,7 @@
 #include <thread>
 #include <vector>
 #include <map>
+#include <chrono>
 
 #include "ServerSocket.h"
 #include "ServerThread.h"
@@ -33,6 +34,11 @@ int main(int argc, char *argv[]) {
 		return 0;
 	}
 
+	if (!socket.Init(port)) {
+		std::cout << "Socket initialization failed" << std::endl;
+		return 0;
+	}
+
 	// update the server metadata
 	auto metadata = std::make_shared<ServerMetadata>();
 	metadata->SetFactoryId(unique_id);
@@ -45,7 +51,11 @@ int main(int argc, char *argv[]) {
 		std::cout << "Created peer node: " << j + 1 << std::endl;
 
 		metadata->AddNeighbors(std::move(node));
+
 	}
+
+	// give 5 seconds to allow all servers to boot
+	std::this_thread::sleep_for(std::chrono::seconds(5));
 
 	// create the primary admin thread
 	std::thread pfa_thread(&LaptopFactory::PrimaryAdminThread, 
@@ -57,10 +67,11 @@ int main(int argc, char *argv[]) {
 			&factory, engineer_cnt++);
 	thread_vector.push_back(std::move(ifa_thread));
 
-	if (!socket.Init(port)) {
-		std::cout << "Socket initialization failed" << std::endl;
-		return 0;
-	}
+	// create the candidate thread
+		// this will initialize
+	std::thread timeout_thread(&LaptopFactory::TimeoutThread,
+			&factory);
+	thread_vector.push_back(std::move(timeout_thread));
 
 	while ((new_socket = socket.Accept())) {
 		std::cout << "I have received the connection request from the primary" << std::endl;

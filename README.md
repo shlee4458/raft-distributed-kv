@@ -107,16 +107,8 @@ Common
 
 # Implementation
 
-## Primary-Backup Server logic
-<i>Note: Primary server - Servers that receive the write request from the customer and handles the request. / Backup server - Servers that receive the replication request. </i>
-
-Step 1: Client have 2 options for the requests; write request(type 1), read request(type 2: without debug message, type 3: with debug message). A server can receive request from both client and the primary server(replication request). Once a server receives a request from the customer, it will identify whether it is replication request or the customer request through unmarshalling one-time identifier sent by either primary server(identifier: 1) or the customer(identifier: 0). Each identifier will route the request to the PfaHandler and CustomerHandler, respectively.
-
-Step 2 - replication request handling: PfaHandler in the backup server will wait to receive a replication request sent from the primary server. The replicatioin request includes last_index where the Map Operation object should be inserted in the log object that stores historic map operations, last committed_index from the primary server, and customer id and order number for the simple key value mapping. Once the information is unmarshalled, the backup server responds to the primary server with the acknowledge message containing 1. Primary server will process all the acknowledge messages that it has received by adding up all the message values, and only when all the backup servers have responded with the acknowledge message, it executed the map operation added at the current loop. 
-
-Step 2 - customer request handling: CustomerHandler in both backup server and the primary server will wait to receive a customer request object. If it is a read request, the server communicates directly to the customer with local customer order information stored in the map object. If the order is a write request and the server was a primary server, it sends replication request to the backup servers. However, when the server was a backup server, it will adjust itself to the primary server by establishing a connection with other servers and updating the primary id stored in the metadata object.
-
-Step 3 - If either primary server or client fails while sending the requests, the backup server gracefully exits out from the handler loops, and wait for the connection request from either client or server.
+## Modification: Send the client leader info instead of follower rerouting request to the leader
+In my raft implemetation, if the server is a follower and the request type is update, client opens a new socket to communicate directly with the leader. The decision was to accomodate with the factory implementation that the server who updates sends back the laptop information to the client. Instead of follower receiving the laptop information from the leader and sending back the laptop information to the server, I believe the modification improves the network performance. For this, I added one more layer of communication when the server and client initializes socket connection. Leader sends client whether the current server is a leader or follower, and client acts accordingly. 
 
 ## Design choices for ownership of objects 
 I decided to store the server information like factory id, primary id along with customer record related information in the metadata class. For simplicity, I included communication logic between servers -- replication request -- within the metadata class, instead of including all the communication logic within the ServerStub class. Metadata object is a singleton object that stays within the LaptopFactory object.

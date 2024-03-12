@@ -66,3 +66,18 @@ int ServerStub::RespondToPrimary() const {
 	identifier.Marshal(buffer);
 	return socket->Send(buffer, size, 0);
 }
+
+int ServerStub::SendIsLeader(int is_leader) {
+	char buffer[4];
+	Identifier identifier;
+	int size = identifier.Size();
+	identifier.SetIdentifier(is_leader + 1);
+	identifier.Marshal(buffer);
+	return socket->Send(buffer, size, 0);	
+}
+
+int ServerStub::SendLeaderInfo(LeaderInfo info) {
+	char buffer[32];
+	info.Marshal(buffer);
+	return socket->Send(buffer, info.Size(), 0);
+}
