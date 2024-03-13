@@ -62,12 +62,17 @@ int main(int argc, char *argv[]) {
 	std::thread pfa_thread(&LaptopFactory::PrimaryAdminThread, 
 			&factory, engineer_cnt++);
 	thread_vector.push_back(std::move(pfa_thread));
-	
-	// create the idle admin thread
-	std::thread ifa_thread(&LaptopFactory::IdleAdminThread,
-			&factory, engineer_cnt++);
-	thread_vector.push_back(std::move(ifa_thread));
 
+	// create the follower admin thread
+	std::thread follower_thread(&LaptopFactory::IdleAdminThread,
+			&factory, engineer_cnt++);
+	thread_vector.push_back(std::move(follower_thread));	
+	
+	// create the idle admin thread -- remove after finishing implementation
+	// std::thread ifa_thread(&LaptopFactory::IdleAdminThread,
+	// 		&factory, engineer_cnt++);
+	// thread_vector.push_back(std::move(ifa_thread));
+	
 	// create the candidate thread
 		// this will initialize
 	std::thread timeout_thread(&LaptopFactory::TimeoutThread,

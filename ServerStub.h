@@ -28,6 +28,8 @@ public:
 	RequestVoteMessage RecvRequestVote();
 	int SendVoteResponse(RequestVoteResponse res);
 	int IdentifyRPC();
+	LogRequest RecvLogRequest();
+	int SendLogResponse(LogResponse log_res);
 };
 
 #endif // end of #ifndef __SERVER_STUB_H__

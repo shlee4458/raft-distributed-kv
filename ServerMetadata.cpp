@@ -68,6 +68,14 @@ ReplicationRequest ServerMetadata::GetReplicationRequest(MapOp op) {
     return ReplicationRequest(last_idx, committed_idx, leader_id, op_code, op_arg1, op_arg2);
 }
 
+int ServerMetadata::GetTermIdx(int idx) {
+    return smr_log[idx].term;
+}
+
+int ServerMetadata::GetCommitLength() {
+    return commit_length;
+}
+
 void ServerMetadata::SetLeaderId(int id) {
 	leader_id = id;
     return;
@@ -340,16 +348,20 @@ void ServerMetadata::SetAckLength(int node_idx, int size) {
     ack_length[node_idx] = size;
 }
 
-void ServerMetadata::ReplicateLog() {
+int ServerMetadata::ReplicateLog() {
 
     // for each of the neighbors
         // get the length of the item sent to the neighbor
     int log_size, prefix_length, prefix_term, op_term, op_arg1, op_arg2;
-    LogRequest lr;
+    std::shared_ptr<ClientSocket> socket;
+    LogRequest log_req;
+    LogResponse log_res;
     MapOp op;
     int log_size = last_idx;
+    int j;
 
     for (int i = 0; i < GetPeerSize(); i++) {
+        socket = neighbor_sockets[i];
         prefix_length = sent_length[i];
         prefix_term = 0;
         if (prefix_length > 0) {
@@ -357,12 +369,20 @@ void ServerMetadata::ReplicateLog() {
         }
 
         // for all the unsent op, send to the followers
-        for (int j = prefix_length; j < log_size; j++) {
+        while (prefix_length < log_size) {
             op_term = smr_log[j].term;
             op_arg1 = smr_log[j].arg1;
             op_arg2 = smr_log[j].arg2;
-            lr.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
+            log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
                              commit_length, op_term, op_arg1, op_arg2);
+            
+            // send the log to the follower
+            SendLog(log_req, socket);
+            
+            // update the prefix_length logRequest accordingly with the response
+            log_res = RecvLogResponse(socket);
+
+            // TODO: ADD LOGIC AT 8
             
         }
 
@@ -370,9 +390,26 @@ void ServerMetadata::ReplicateLog() {
 
 }
 
-void ServerMetadata::SendLog(LogRequest lr, int node_idx) {
+int ServerMetadata::SendLog(LogRequest log_req, std::shared_ptr<ClientSocket> socket) {
+    SendIdentifier(APPENDLOG_RPC, socket);
 	char buffer[64];
     int size;
-    lr.Marshal(buffer);
-    
+    log_req.Marshal(buffer);
+    size = log_req.Size();
+    return socket->Send(buffer, size, 0);
+}
+
+LogResponse ServerMetadata::RecvLogResponse(std::shared_ptr<ClientSocket> socket) {
+    LogResponse log_res;
+    char buffer[32];
+    int size = log_res.Size();
+    socket->Recv(buffer, size, 0);
+    log_res.Unmarshal(buffer);
+    return log_res;
+}
+
+void ServerMetadata::DropUncommittedLog(int log_size, int req_prefix_length) {
+    for (int log_size; log_size < req_prefix_length; log_size++) {
+        smr_log.pop_back();
+    }
 }

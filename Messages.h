@@ -220,4 +220,28 @@ private:
 	int op_arg2;
 };
 
+class LogResponse {
+public:
+	LogResponse();
+	void SetLogResponse(int follower_id, 
+					   int current_term, 
+					   int ack, 
+					   int success);
+	int Size();
+
+	int GetFollowerId();
+	int GetCurrentTerm();
+	int GetAck();
+	int GetSuccess();
+
+	void Marshal(char *buffer);
+	void Unmarshal(char *buffer);
+	friend std::ostream& operator<<(std::ostream& os, const LogRequest& req);
+private:
+	int follower_id;
+	int current_term;
+	int ack;
+	int success;
+};
+
 #endif // #ifndef __MESSAGES_H__

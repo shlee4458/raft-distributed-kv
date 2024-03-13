@@ -581,15 +581,19 @@ void RequestVoteResponse::Unmarshal(char *buffer) {
 /**
  * Log Request
 */
-LogRequest::LogRequest()
-:{ }
+LogRequest::LogRequest(){ }
 
-LogRequest::LogRequest(int leader_id, int current_term, int prefix_length, int prefix_term,
-					   int commit_length, int op_term, int op_arg1, int op_arg2) 
-					   : leader_id(leader_id), current_term(current_term), prefix_length(prefix_length),
-						 prefix_term(prefix_term), commit_length(commit_length),
-						 op_term(op_term), op_arg1(op_arg1), op_arg2(op_arg2)
-						 {}
+void LogRequest::SetLogRequest(int leader_id, int current_term, int prefix_length, int prefix_term,
+					   int commit_length, int op_term, int op_arg1, int op_arg2) {
+						    this->leader_id = leader_id;
+							this->current_term = current_term;
+							this->prefix_length = prefix_length;
+							this->prefix_term = prefix_term;
+							this->commit_length = commit_length;
+							this->op_term = op_term;
+							this->op_arg1 = op_arg1;
+							this->op_arg2 = op_arg2;
+					   }
 
 int LogRequest::Size() {
     return sizeof(leader_id) + sizeof(current_term) + sizeof(prefix_length) +
@@ -705,4 +709,74 @@ std::ostream& operator<<(std::ostream& os, const LogRequest& req) {
 		<< "Operation Argument 1: " << req.op_arg1 << ", "
 		<< "Operation Argument 2: " << req.op_arg2 << ", " << std::endl;
 	return os;
+}
+
+/**
+ * Log Response
+*/
+
+LogResponse::LogResponse() { }
+
+void LogResponse::SetLogResponse(int follower_id, int current_term, int ack, int success) {
+	this->follower_id = follower_id;
+	this->current_term = current_term;
+	this->ack = ack;
+	this->success = success;
+}
+
+int LogResponse::Size() {
+	return sizeof(follower_id) + sizeof(current_term) + sizeof(ack) + sizeof(success);
+}
+
+int LogResponse::GetFollowerId() {
+	return follower_id;
+}
+
+int LogResponse::GetCurrentTerm() {
+	return current_term;
+}
+
+int LogResponse::GetAck() {
+	return ack;
+}
+
+int LogResponse::GetSuccess() {
+	return success;
+}
+
+void LogResponse::Marshal(char *buffer) {
+	int net_follower_id = htonl(follower_id);
+	int net_current_term = htonl(current_term);
+	int net_ack = htonl(ack);
+	int net_success = htonl(success);
+
+	int offset = 0;
+	memcpy(buffer + offset, &net_follower_id, sizeof(net_follower_id));
+	offset += sizeof(net_follower_id);
+	memcpy(buffer + offset, &net_current_term, sizeof(net_current_term));
+	offset += sizeof(net_current_term);
+	memcpy(buffer + offset, &net_ack, sizeof(net_ack));
+	offset += sizeof(net_ack);
+	memcpy(buffer + offset, &net_success, sizeof(net_success));
+}
+
+void LogResponse::Unmarshal(char *buffer) {
+	int net_follower_id;
+	int net_current_term;
+	int net_ack;
+	int net_success;
+	int offset = 0;
+
+	memcpy(&net_follower_id, buffer + offset, sizeof(net_follower_id));
+	offset += sizeof(net_follower_id);
+	memcpy(&net_current_term, buffer + offset, sizeof(net_current_term));
+	offset += sizeof(net_current_term);
+	memcpy(&net_ack, buffer + offset, sizeof(net_ack));
+	offset += sizeof(net_ack);
+	memcpy(&net_success, buffer + offset, sizeof(net_success));
+
+	follower_id = ntohl(net_follower_id);
+	current_term = ntohl(net_current_term);
+	ack = ntohl(net_ack);
+	success = ntohl(net_success);
 }

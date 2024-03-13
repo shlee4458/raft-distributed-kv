@@ -66,6 +66,8 @@ public:
     int GetStatus();
     int GetVoteReceivedSize();
     int GetCurrentTerm();
+    int GetTermIdx(int idx);
+    int GetCommitLength();
 
     void SetFactoryId(int id);
     void SetLeaderId(int id);
@@ -85,7 +87,7 @@ public:
     void InitNeighbors();
     int SendReplicationRequest(MapOp op);
 
-    void ReplicateLog();
+    int ReplicateLog();
     void RequestVote();
     int SendIdentifier(int identifier, std::shared_ptr<ClientSocket> nei);
     int GetLogSize();
@@ -94,7 +96,10 @@ public:
     RequestVoteResponse RecvVoteResponse(std::shared_ptr<ClientSocket> nei);
     void InitLeader();
     void SetAckLength(int node_idx, int size);
-    void SendLog(LogRequest lr, int node_idx);
+    int SendLog(LogRequest lr, std::shared_ptr<ClientSocket> socket);
+    LogResponse RecvLogResponse(std::shared_ptr<ClientSocket> socket);
+    int SetCommitLength();
+    void DropUncommittedLog(int log_size, int req_prefix_length);
 };
 
 #endif

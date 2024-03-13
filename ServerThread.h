@@ -21,15 +21,21 @@ struct PrimaryAdminRequest {
 	std::shared_ptr<ServerStub> stub;
 };
 
-struct IdleAdminRequest {
-	ReplicationRequest repl_request;
+// struct IdleAdminRequest {
+// 	ReplicationRequest repl_request;
+// 	std::shared_ptr<ServerStub> stub;
+// };
+
+struct FollowerRequest {
+	LogRequest log_request;
 	std::shared_ptr<ServerStub> stub;
 };
 
 class LaptopFactory {
 private:
 	std::queue<std::shared_ptr<PrimaryAdminRequest>> erq;
-	std::queue<std::shared_ptr<IdleAdminRequest>> req;
+	// std::queue<std::shared_ptr<IdleAdminRequest>> req;
+	std::queue<std::shared_ptr<FollowerRequest>> req;
 
 	std::mutex erq_lock;
 	std::mutex rep_lock;
@@ -54,10 +60,11 @@ private:
 	void CustomerHandler(int engineer_id, std::shared_ptr<ServerStub> stub);
 	void ServerHandler(std::shared_ptr<ServerStub> stub);
 	void CandidateVoteHandler(std::shared_ptr<ServerStub> stub);
-	void AppendLogHandler(std::shared_ptr<ServerStub> stub);
+	int AppendLogHandler(std::shared_ptr<ServerStub> stub);
+	void AppendLog(int req_prefix_length, int req_commit_length, int req_op_term, int req_op_arg1, int req_op_arg2);
 
-	void PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub);
-	void IdleMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary);
+	void LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub);
+	void FollowerMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary);
 
 	int GetRandomTimeout();
 
@@ -68,6 +75,7 @@ public:
 	void PrimaryAdminThread(int id);
 	void IdleAdminThread(int id);
 	void TimeoutThread();
+	void FollowerThread();
 };
 
 #endif // end of #ifndef __SERVERTHREAD_H__

@@ -75,16 +75,7 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 	
 	while (true) {
 		switch (sender) {
-			case PFA_IDENTIFIER:
-				if (DEBUG) {
-					std::cout << "I have received a message from the Primary server!" << std::endl;
-				}
-				PfaHandler(std::move(stub));
-				if (DEBUG) {
-					std::cout << "CONNECTION WITH THE SERVER HAS BEEN TERMINATED" << std::endl;
-				}
-				return;
-				break;
+
 			case CUSTOMER_IDENTIFIER:
 				if (DEBUG) {
 					std::cout << "I have received a message from a customer!" << std::endl;
@@ -101,8 +92,16 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 				}
 				// wait for another message to understand if it is vote request or append log request
 				ServerHandler(std::move(stub));
-
-				
+			// case PFA_IDENTIFIER:
+			// 	if (DEBUG) {
+			// 		std::cout << "I have received a message from the Primary server!" << std::endl;
+			// 	}
+			// 	PfaHandler(std::move(stub));
+			// 	if (DEBUG) {
+			// 		std::cout << "CONNECTION WITH THE SERVER HAS BEEN TERMINATED" << std::endl;
+			// 	}
+			// 	return;
+			// 	break;
 			default:
 				return;
 				break;
@@ -129,8 +128,27 @@ void LaptopFactory::ServerHandler(std::shared_ptr<ServerStub> stub) {
 	}
 }
 
-void LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
+int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
 
+
+	// get the LogRequest instance from the leader
+	LogRequest request;
+	while (true) {
+		request = stub->RecvLogRequest();
+		
+		// check if the log request received is valid, and get LogRequestResponse with the info
+
+		std::shared_ptr<FollowerRequest> follower_req = 
+			std::shared_ptr<FollowerRequest>(new FollowerRequest);
+
+		follower_req->log_request = request;
+		follower_req->stub = stub;
+
+		rep_lock.lock();
+		req.push(std::move(follower_req));
+		rep_cv.notify_one();
+		rep_lock.unlock();
+	}
 }
 
 void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
@@ -177,32 +195,6 @@ void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 
 	// if not valid,
 		// vote against
-}
-
-bool LaptopFactory::PfaHandler(std::shared_ptr<ServerStub> stub) {
-
-	ReplicationRequest request;
-	while (true) {
-		request = stub->ReceiveReplication();
-		
-		// Primary Failure: set the leader_id to -1
-		if (!request.IsValid()) {
-			metadata->SetLeaderId(-1);
-			std::cout << "Primary Server went down, gracefully exiting" << std::endl;
-			return 0;
-		}
-
-		std::shared_ptr<IdleAdminRequest> idle_req = 
-			std::shared_ptr<IdleAdminRequest>(new IdleAdminRequest);
-
-		idle_req->repl_request = request;
-		idle_req->stub = stub;
-
-		rep_lock.lock();
-		req.push(std::move(idle_req));
-		rep_cv.notify_one();
-		rep_lock.unlock();
-	}
 }
 
 void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub> stub) {
@@ -288,18 +280,24 @@ void LaptopFactory::PrimaryAdminThread(int id) {
 		req->prom.set_value(req->laptop);
 
 		ml.lock();
-		PrimaryMaintainLog(customer_id, order_num, stub); 
+		LeaderMaintainLog(customer_id, order_num, stub); 
 		ml.unlock();
 	}
 }
 
-void LaptopFactory::IdleAdminThread(int id) {
+void LaptopFactory::FollowerThread() {
 	std::unique_lock<std::mutex> rl(rep_lock, std::defer_lock), 
-								 ml(meta_lock, std::defer_lock);
+								 ml(meta_lock, std::defer_lock),
+								 tl(timeout_lock, std::defer_lock);
 	std::shared_ptr<ServerStub> stub;
+	LogResponse log_res;
 
-	int last_idx, committed_idx, leader_id;
-	int customer_id, order_num;
+	int req_leader_id, req_current_term, req_prefix_length, req_prefix_term;
+	int req_commit_length, req_op_term, req_op_arg1, req_op_arg2;
+	int current_term = metadata->GetCurrentTerm();
+	int factory_id = metadata->GetFactoryId();
+
+	bool can_log, included;
 
 	while (true) {
 		rl.lock();
@@ -314,35 +312,84 @@ void LaptopFactory::IdleAdminThread(int id) {
 		rl.unlock();
 
 		// get the information
-		last_idx = request->repl_request.GetLastIdx();
-		committed_idx = request->repl_request.GetCommitedIdx();
-		leader_id = request->repl_request.GetLeaderId();
-		customer_id = request->repl_request.GetArg1();
-		order_num = request->repl_request.GetArg2();
+		req_leader_id = request->log_request.GetLeaderId();
+		req_current_term = request->log_request.GetCurrentTerm();
+		req_prefix_length = request->log_request.GetPrefixLength();
+		req_prefix_term = request->log_request.GetPrefixTerm();
+		req_commit_length = request->log_request.GetCommitLength();
+		req_op_term = request->log_request.GetOpTerm();
+		req_op_arg1 = request->log_request.GetOpArg1();
+		req_op_arg2 = request->log_request.GetOpArg2();
 		stub = request->stub;
+
 		if (DEBUG) {
 			std::cout << request << std::endl;
 		}
-		
-		// check if the current server was the primary
-		bool was_primary = metadata->IsLeader();
 
-		// update the metadata; commited index, last index
-		if (was_primary) {
-			metadata->SetLeaderId(leader_id);
-			if (DEBUG) {
-				std::cout << "I have set the primary id to: " << leader_id << std::endl;
-			}
+		// compare the req_term with the server term
+		current_term = metadata->GetCurrentTerm();
+		if (req_current_term > current_term) {
+			metadata->SetCurrentTerm(req_current_term);
+			metadata->SetVotedFor(-1);
+
+			// reset the timeout by setting heartbeat to true
+			tl.lock();
+			heartbeat = true;
+			tl.unlock();
+		} 
+
+		// if the current was candidate, update the status
+		if (current_term == req_current_term) { // found the leader
+			metadata->SetStatus(FOLLOWER);
+			metadata->SetLeaderId(req_leader_id);
 		}
-		ml.lock();
-		IdleMaintainLog(customer_id, order_num, last_idx, committed_idx, was_primary);
-		ml.unlock();
+
+		included = (metadata->GetLogSize() > req_prefix_length);
+		can_log = (metadata->GetLogSize() >= req_prefix_length) && 
+				  (req_prefix_length == 0 || metadata->GetTermIdx(req_prefix_length - 1));
+
+		if ((current_term == req_current_term) && can_log) {
+			ml.lock();
+			if (!included) {
+				AppendLog(req_prefix_length, req_commit_length, req_op_term, req_op_arg1, req_op_arg2);
+			}
+			ml.unlock();
+
+			// send yes response
+			log_res.SetLogResponse(factory_id, current_term, req_prefix_length + 1, 1);
+
+		} else {
+			// send no response
+			log_res.SetLogResponse(factory_id, current_term, 0, 0);
+		}
 
 		// send to the primary that the log update is complete
 		stub->RespondToPrimary();
 		if (DEBUG) {
 			std::cout << "I have responded to the primary!" << std::endl;
 		}
+	}
+}
+
+void LaptopFactory::AppendLog(int req_prefix_length, int req_commit_length, int req_op_term, int req_op_arg1, int req_op_arg2) {
+	int log_size = metadata->GetLogSize();
+	int commit_length = metadata->GetCommitLength();
+
+	// drop the uncommitted log
+	if (log_size > req_prefix_length) {
+		metadata->DropUncommittedLog(log_size, req_prefix_length);
+	}
+
+	// append to the log
+	MapOp op;
+	op.term = req_op_term;
+	op.arg1 = req_op_arg1;
+	op.arg2 = req_op_arg2;
+	metadata->AppendLog(op);
+
+	// commit the appended log
+	if (req_commit_length > commit_length) {
+		metadata->ExecuteLog(req_prefix_length);
 	}
 }
 
@@ -412,7 +459,7 @@ int LaptopFactory::GetRandomTimeout() {
 }
 
 void LaptopFactory::
-PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub) {
+LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub) {
 	
 	int response_received, prev_last_idx, prev_commited_idx;
 	MapOp op;
@@ -434,7 +481,7 @@ PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerS
 	metadata->SetAckLength(-1, metadata->GetLogSize());
 
 	// send replicate log message to all of the neighbor nodes
-	response_received = metadata->SendReplicationRequest(op);
+	response_received = metadata->ReplicateLog();
 
 	// if the number of response_received does not match the neighbor size
 	if (!response_received) {
@@ -447,7 +494,7 @@ PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerS
 }
 
 void LaptopFactory::
-IdleMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary) {
+FollowerMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary) {
 
 	MapOp op;
 	op.term = 1;
@@ -462,3 +509,82 @@ IdleMaintainLog(int customer_id, int order_num, int req_last, int req_committed,
 		metadata->ExecuteLog(req_committed);
 	}
 }
+
+// bool LaptopFactory::PfaHandler(std::shared_ptr<ServerStub> stub) {
+
+// 	ReplicationRequest request;
+// 	while (true) {
+// 		request = stub->ReceiveReplication();
+		
+// 		// Primary Failure: set the leader_id to -1
+// 		if (!request.IsValid()) {
+// 			metadata->SetLeaderId(-1);
+// 			std::cout << "Primary Server went down, gracefully exiting" << std::endl;
+// 			return 0;
+// 		}
+
+// 		std::shared_ptr<IdleAdminRequest> idle_req = 
+// 			std::shared_ptr<IdleAdminRequest>(new IdleAdminRequest);
+
+// 		idle_req->repl_request = request;
+// 		idle_req->stub = stub;
+
+// 		rep_lock.lock();
+// 		req.push(std::move(idle_req));
+// 		rep_cv.notify_one();
+// 		rep_lock.unlock();
+// 	}
+// }
+
+// void LaptopFactory::IdleAdminThread(int id) {
+// 	std::unique_lock<std::mutex> rl(rep_lock, std::defer_lock), 
+// 								 ml(meta_lock, std::defer_lock);
+// 	std::shared_ptr<ServerStub> stub;
+
+// 	int last_idx, committed_idx, leader_id;
+// 	int customer_id, order_num;
+
+// 	while (true) {
+// 		rl.lock();
+// 		if (req.empty()) {
+// 			rep_cv.wait(rl, [this]{ return !req.empty(); });
+// 		}
+// 		if (DEBUG) {
+// 			std::cout << "Successfully received the replication request" << std::endl;
+// 		}
+// 		auto request = std::move(req.front());
+// 		req.pop();
+// 		rl.unlock();
+
+// 		// get the information
+// 		last_idx = request->repl_request.GetLastIdx();
+// 		committed_idx = request->repl_request.GetCommitedIdx();
+// 		leader_id = request->repl_request.GetLeaderId();
+// 		customer_id = request->repl_request.GetArg1();
+// 		order_num = request->repl_request.GetArg2();
+// 		stub = request->stub;
+// 		if (DEBUG) {
+// 			std::cout << request << std::endl;
+// 		}
+		
+// 		// check if the current server was the primary
+// 		bool was_primary = metadata->IsLeader();
+
+// 		// update the metadata; commited index, last index
+// 		if (was_primary) {
+// 			metadata->SetLeaderId(leader_id);
+// 			if (DEBUG) {
+// 				std::cout << "I have set the primary id to: " << leader_id << std::endl;
+// 			}
+// 		}
+// 		ml.lock();
+// 		IdleMaintainLog(customer_id, order_num, last_idx, committed_idx, was_primary);
+// 		ml.unlock();
+
+// 		// send to the primary that the log update is complete
+// 		stub->RespondToPrimary();
+// 		if (DEBUG) {
+// 			std::cout << "I have responded to the primary!" << std::endl;
+// 		}
+// 	}
+// }
