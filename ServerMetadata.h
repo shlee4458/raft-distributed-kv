@@ -32,12 +32,13 @@ private:
     int factory_id;
     bool is_leader = false;
     int status = 1;
+    int commit_length;
 
     int voted_for;
     std::set<int> vote_received;
     int current_term;
-    int* sent_length;
-    int* ack_length;
+    int* sent_length; // reserve sent_length[size] for itself
+    int* ack_length; // reserve ack_length[size] for itself
 
     std::vector<std::shared_ptr<ServerNode>> neighbors;
     std::deque<std::shared_ptr<ClientSocket>> neighbor_sockets; // socket to the backup nodes as a primary
@@ -92,6 +93,8 @@ public:
     bool GetVotedFor();
     RequestVoteResponse RecvVoteResponse(std::shared_ptr<ClientSocket> nei);
     void InitLeader();
+    void SetAckLength(int node_idx, int size);
+    void SendLog(LogRequest lr, int node_idx);
 };
 
 #endif

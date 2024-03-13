@@ -184,5 +184,40 @@ private:
 	int id, current_term, voted;
 };
 
+class LogRequest {
+public:
+	LogRequest();
+	void SetLogRequest(int leader_id, 
+					   int current_term, 
+					   int prefix_length, 
+					   int prefix_term, 
+					   int commit_length,
+					   int op_term,
+					   int op_arg1, 
+					   int op_arg2);
+	int Size();
+
+	int GetLeaderId();
+	int GetCurrentTerm();
+	int GetPrefixLength();
+	int GetPrefixTerm();
+	int GetCommitLength();
+	int GetOpTerm();
+	int GetOpArg1();
+	int GetOpArg2();
+
+	void Marshal(char *buffer);
+	void Unmarshal(char *buffer);
+	friend std::ostream& operator<<(std::ostream& os, const LogRequest& req);
+private:
+	int leader_id;
+	int current_term;
+	int prefix_length;
+	int prefix_term;
+	int commit_length;
+	int op_term;
+	int op_arg1;
+	int op_arg2;
+};
 
 #endif // #ifndef __MESSAGES_H__

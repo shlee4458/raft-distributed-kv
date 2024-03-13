@@ -52,7 +52,9 @@ private:
 
 	bool PfaHandler(std::shared_ptr<ServerStub> stub);
 	void CustomerHandler(int engineer_id, std::shared_ptr<ServerStub> stub);
+	void ServerHandler(std::shared_ptr<ServerStub> stub);
 	void CandidateVoteHandler(std::shared_ptr<ServerStub> stub);
+	void AppendLogHandler(std::shared_ptr<ServerStub> stub);
 
 	void PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub);
 	void IdleMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary);

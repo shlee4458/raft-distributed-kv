@@ -27,6 +27,7 @@ public:
 	int SendLeaderInfo(LeaderInfo info);
 	RequestVoteMessage RecvRequestVote();
 	int SendVoteResponse(RequestVoteResponse res);
+	int IdentifyRPC();
 };
 
 #endif // end of #ifndef __SERVER_STUB_H__

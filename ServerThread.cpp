@@ -7,7 +7,7 @@
 
 #define PFA_IDENTIFIER 1
 #define CUSTOMER_IDENTIFIER 2
-#define CANDIDATE_IDENTIFIER 3
+#define SERVER_IDENTIFIER 3
 #define UPDATE_REQUEST 1
 #define READ_REQUEST 2
 
@@ -15,6 +15,9 @@
 #define LEADER 2
 #define CANDIDATE 3
 #define HEARTBEAT_TIME 100
+
+#define REQUESTVOTE_RPC 0
+#define APPENDLOG_RPC 1
 
 #define DEBUG 0
 
@@ -92,16 +95,42 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 				}
 				return;
 				break;
-			case CANDIDATE_IDENTIFIER:
+			case SERVER_IDENTIFIER:
 				if (DEBUG) {
-					std::cout << "Received a vote request from a Candidate!!" << std::endl;
+					std::cout << "Received a message from another server!!" << std::endl;
 				}
-				CandidateVoteHandler(std::move(stub));
+				// wait for another message to understand if it is vote request or append log request
+				ServerHandler(std::move(stub));
+
+				
 			default:
 				return;
 				break;
 		}
 	}
+}
+
+void LaptopFactory::ServerHandler(std::shared_ptr<ServerStub> stub) {
+	int rpc;
+	while (true) {
+		// check if the RPC is vote request or append log request
+		rpc = stub->IdentifyRPC();
+		switch (rpc)
+		{
+			case REQUESTVOTE_RPC:
+				CandidateVoteHandler(stub);
+				break;
+			
+			case APPENDLOG_RPC:
+				AppendLogHandler(stub);
+				break;
+		}
+
+	}
+}
+
+void LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
+
 }
 
 void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
@@ -133,8 +162,7 @@ void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 				((cand_last_term == last_term) && cand_log_size >= log_size);
 
 	RequestVoteResponse res;
-
-	if (valid && cand_current_term == current_term && voted_for) {
+	if (valid && cand_current_term == current_term && voted_for == cand_id) {
 		res.SetRequestVoteResponse(metadata->GetFactoryId(), current_term, true);
 	} else {
 		res.SetRequestVoteResponse(metadata->GetFactoryId(), current_term, false);
@@ -320,15 +348,17 @@ void LaptopFactory::IdleAdminThread(int id) {
 
 
 void LaptopFactory::TimeoutThread() {
-	int timeout;
+	int timeout, current_term;
 	std::unique_lock<std::mutex> tl(timeout_lock, std::defer_lock);
 
 	// if the current state is;
 	while (true) {
 		switch (metadata->GetStatus())
 			{
+				current_term = metadata->GetCurrentTerm();
 				timeout = GetRandomTimeout();
 				case FOLLOWER:
+					std::cout << "Current term: " << current_term << " " << "- " << "Follower" << std::endl;
 					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return heartbeat; });
 
 					if (heartbeat) {
@@ -343,11 +373,13 @@ void LaptopFactory::TimeoutThread() {
 					// vote for itself
 					// request vote
 					metadata->RequestVote();
+					std::cout << "Current term: " << current_term << " " << "- " << "Candidate" << std::endl;
 					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
 											[&]{ return metadata->GetStatus() == LEADER // elected as the leader
 													 || metadata->GetStatus() == FOLLOWER; }); // found leader
 				case LEADER:
 					// for every 100ms send replicatelog
+					std::cout << "Current term: " << current_term << " " << "- " << "Leader" << std::endl;
 					metadata->ReplicateLog();
 					timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
 											[&]{ return metadata->GetStatus() == FOLLOWER; });
@@ -384,18 +416,24 @@ PrimaryMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerS
 	
 	int response_received, prev_last_idx, prev_commited_idx;
 	MapOp op;
-	op.term = 1;
+	op.term = metadata->GetCurrentTerm();
 	op.arg1 = customer_id;
 	op.arg2 = order_num;
-	prev_last_idx = metadata->GetLastIndex();
-	prev_commited_idx = metadata->GetCommittedIndex();
+	
+	// // CONSIDER: if it was a follower, should I execute the last?; no
+	// prev_last_idx = metadata->GetLastIndex();
+	// prev_commited_idx = metadata->GetCommittedIndex();
+	// if (prev_last_idx != prev_commited_idx) {
+	// 	metadata->ExecuteLog(prev_last_idx);
+	// }
 
-	// if it was previously an idle server, execute the last log
-	if (prev_last_idx != prev_commited_idx) {
-		metadata->ExecuteLog(prev_last_idx);
-	}
-
+	// append the record(message, current term) to the log
 	metadata->AppendLog(op);
+
+	// set the ack to the log_size
+	metadata->SetAckLength(-1, metadata->GetLogSize());
+
+	// send replicate log message to all of the neighbor nodes
 	response_received = metadata->SendReplicationRequest(op);
 
 	// if the number of response_received does not match the neighbor size

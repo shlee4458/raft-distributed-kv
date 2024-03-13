@@ -576,3 +576,133 @@ void RequestVoteResponse::Unmarshal(char *buffer) {
 	current_term = ntohl(net_current_term);
     voted = ntohl(net_voted); 
 }
+
+
+/**
+ * Log Request
+*/
+LogRequest::LogRequest()
+:{ }
+
+LogRequest::LogRequest(int leader_id, int current_term, int prefix_length, int prefix_term,
+					   int commit_length, int op_term, int op_arg1, int op_arg2) 
+					   : leader_id(leader_id), current_term(current_term), prefix_length(prefix_length),
+						 prefix_term(prefix_term), commit_length(commit_length),
+						 op_term(op_term), op_arg1(op_arg1), op_arg2(op_arg2)
+						 {}
+
+int LogRequest::Size() {
+    return sizeof(leader_id) + sizeof(current_term) + sizeof(prefix_length) +
+           sizeof(prefix_term) + sizeof(commit_length) + sizeof(op_term) +
+           sizeof(op_arg1) + sizeof(op_arg2);
+}
+
+int LogRequest::GetLeaderId() {
+	return leader_id;
+}
+
+int LogRequest::GetCurrentTerm() {
+	return current_term;
+}
+
+int LogRequest::GetPrefixLength() {
+	return prefix_length;
+}
+
+int LogRequest::GetPrefixTerm() {
+	return prefix_term;
+}
+
+int LogRequest::GetCommitLength() {
+	return commit_length;
+}
+
+int LogRequest::GetOpTerm() {
+	return op_term;
+}
+
+int LogRequest::GetOpArg1() {
+	return op_arg1;
+}
+
+int LogRequest::GetOpArg2() {
+	return op_arg2;
+}
+
+void LogRequest::Marshal(char *buffer) {
+    int net_leader_id = htonl(leader_id);
+    int net_current_term = htonl(current_term);
+    int net_prefix_length = htonl(prefix_length);
+    int net_prefix_term = htonl(prefix_term);
+    int net_commit_length = htonl(commit_length);
+    int net_op_term = htonl(op_term);
+    int net_op_arg1 = htonl(op_arg1);
+    int net_op_arg2 = htonl(op_arg2);
+
+    int offset = 0;
+    memcpy(buffer + offset, &net_leader_id, sizeof(net_leader_id));
+    offset += sizeof(net_leader_id);
+    memcpy(buffer + offset, &net_current_term, sizeof(net_current_term));
+    offset += sizeof(net_current_term);
+    memcpy(buffer + offset, &net_prefix_length, sizeof(net_prefix_length));
+    offset += sizeof(net_prefix_length);
+    memcpy(buffer + offset, &net_prefix_term, sizeof(net_prefix_term));
+    offset += sizeof(net_prefix_term);
+    memcpy(buffer + offset, &net_commit_length, sizeof(net_commit_length));
+    offset += sizeof(net_commit_length);
+    memcpy(buffer + offset, &net_op_term, sizeof(net_op_term));
+    offset += sizeof(net_op_term);
+    memcpy(buffer + offset, &net_op_arg1, sizeof(net_op_arg1));
+    offset += sizeof(net_op_arg1);
+    memcpy(buffer + offset, &net_op_arg2, sizeof(net_op_arg2));
+}
+
+void LogRequest::Unmarshal(char *buffer) {
+    int net_leader_id;
+    int net_current_term;
+    int net_prefix_length;
+    int net_prefix_term;
+    int net_commit_length;
+    int net_op_term;
+    int net_op_arg1;
+    int net_op_arg2;
+    int offset = 0;
+
+    memcpy(&net_leader_id, buffer + offset, sizeof(net_leader_id));
+    offset += sizeof(net_leader_id);
+    memcpy(&net_current_term, buffer + offset, sizeof(net_current_term));
+    offset += sizeof(net_current_term);
+    memcpy(&net_prefix_length, buffer + offset, sizeof(net_prefix_length));
+    offset += sizeof(net_prefix_length);
+    memcpy(&net_prefix_term, buffer + offset, sizeof(net_prefix_term));
+    offset += sizeof(net_prefix_term);
+    memcpy(&net_commit_length, buffer + offset, sizeof(net_commit_length));
+    offset += sizeof(net_commit_length);
+    memcpy(&net_op_term, buffer + offset, sizeof(net_op_term));
+    offset += sizeof(net_op_term);
+    memcpy(&net_op_arg1, buffer + offset, sizeof(net_op_arg1));
+    offset += sizeof(net_op_arg1);
+    memcpy(&net_op_arg2, buffer + offset, sizeof(net_op_arg2));
+
+    leader_id = ntohl(net_leader_id);
+    current_term = ntohl(net_current_term);
+    prefix_length = ntohl(net_prefix_length);
+    prefix_term = ntohl(net_prefix_term);
+    commit_length = ntohl(net_commit_length);
+    op_term = ntohl(net_op_term);
+    op_arg1 = ntohl(net_op_arg1);
+    op_arg2 = ntohl(net_op_arg2);
+}
+
+std::ostream& operator<<(std::ostream& os, const LogRequest& req) {
+	os << "**** This is the log request ****\n"
+		<< "Leader ID: " << req.leader_id << ", "
+		<< "Current Term: " << req.current_term << ", "
+		<< "Prefix Length: " << req.prefix_length << ", "
+		<< "Prefix Term: " << req.prefix_term << ", "
+		<< "Commit Length: " << req.commit_length << ", "
+		<< "Operation Term: " << req.op_term << ", "
+		<< "Operation Argument 1: " << req.op_arg1 << ", "
+		<< "Operation Argument 2: " << req.op_arg2 << ", " << std::endl;
+	return os;
+}

@@ -96,5 +96,13 @@ int ServerStub::SendVoteResponse(RequestVoteResponse res) {
 	res.Marshal(buffer);
 	int size = res.Size();
 	return socket->Send(buffer, size, 0);
+}
 
+int ServerStub::IdentifyRPC() {
+	char buffer[4];
+	Identifier identifier;
+	int size = identifier.Size();
+	socket->Recv(buffer, size, 0);
+	identifier.Unmarshal(buffer);
+	return identifier.GetIdentifier();
 }
