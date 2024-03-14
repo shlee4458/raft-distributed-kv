@@ -197,7 +197,6 @@ void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub>
 				entry = std::shared_ptr<CustomerRecord>(new CustomerRecord());
 				entry->SetRecord(customer_id, order_num);
 				entry->Print();
-
 				stub->ReturnRecord(std::move(entry));
 				break;
 			default:
@@ -213,7 +212,7 @@ ReadRecord(int customer_id) {
 	return metadata->GetValue(customer_id);
 }
 
-void LaptopFactory::PrimaryAdminThread(int id) {
+void LaptopFactory::LeaderThread(int id) {
 	std::unique_lock<std::mutex> ul(erq_lock, std::defer_lock), 
 								 ml(meta_lock, std::defer_lock);
 	std::shared_ptr<ServerStub> stub;
@@ -269,85 +268,18 @@ void LaptopFactory::FollowerThread() {
 		req.pop();
 		rl.unlock();
 
-		// get the information
-		req_leader_id = request->log_request.GetLeaderId();
-		req_current_term = request->log_request.GetCurrentTerm();
-		req_prefix_length = request->log_request.GetPrefixLength();
-		req_prefix_term = request->log_request.GetPrefixTerm();
-		req_commit_length = request->log_request.GetCommitLength();
-		req_op_term = request->log_request.GetOpTerm();
-		req_op_arg1 = request->log_request.GetOpArg1();
-		req_op_arg2 = request->log_request.GetOpArg2();
+		// get the log response based on the log request
+		ml.lock();
+		log_res = metadata->GetLogResponse(request->log_request);
+		ml.unlock();
+
+		// send the log response to the leader
 		stub = request->stub;
-
-		if (DEBUG) {
-			std::cout << request << std::endl;
-		}
-
-		// compare the req_term with the server term
-		current_term = metadata->GetCurrentTerm();
-		if (req_current_term > current_term) {
-			metadata->SetCurrentTerm(req_current_term);
-			metadata->SetVotedFor(-1);
-
-			// reset the timeout by setting heartbeat to true
-			tl.lock();
-			heartbeat = true;
-			tl.unlock();
-		} 
-
-		// if the current was candidate, update the status
-		if (current_term == req_current_term) { // found the leader
-			metadata->SetStatus(FOLLOWER);
-			metadata->SetLeaderId(req_leader_id);
-		}
-
-		included = (metadata->GetLogSize() > req_prefix_length);
-		can_log = (metadata->GetLogSize() >= req_prefix_length) && 
-				  (req_prefix_length == 0 || metadata->GetTermIdx(req_prefix_length - 1));
-
-		if ((current_term == req_current_term) && can_log) {
-			ml.lock();
-			if (!included) {
-				AppendLog(req_prefix_length, req_commit_length, req_op_term, req_op_arg1, req_op_arg2);
-			}
-			ml.unlock();
-
-			// send yes response
-			log_res.SetLogResponse(factory_id, current_term, req_prefix_length + 1, 1);
-
-		} else {
-			// send no response
-			log_res.SetLogResponse(factory_id, current_term, 0, 0);
-		}
-
-		// send to the primary that the log update is complete
 		stub->SendLogResponse(log_res);
+
 		if (DEBUG) {
 			std::cout << "I have responded to the primary!" << std::endl;
 		}
-	}
-}
-
-void LaptopFactory::AppendLog(int req_prefix_length, int req_commit_length, int req_op_term, int req_op_arg1, int req_op_arg2) {
-	int log_size = metadata->GetLogSize();
-	int commit_length = metadata->GetCommitLength();
-
-	// drop the uncommitted log
-	if (log_size > req_prefix_length) {
-		metadata->DropUncommittedLog(log_size, req_prefix_length);
-	}
-
-	// append to the log
-	MapOp op;
-	op.term = req_op_term;
-	op.arg1 = req_op_arg1;
-	op.arg2 = req_op_arg2;
-	metadata->AppendLog(op);
-
-	// commit the appended log
-	if (req_commit_length > commit_length) {
-		metadata->ExecuteLog(req_prefix_length);
 	}
 }
 
@@ -363,21 +295,20 @@ void LaptopFactory::TimeoutThread() {
 				timeout = GetRandomTimeout();
 				case FOLLOWER:
 					std::cout << "Current term: " << current_term << " " << "- " << "Follower" << std::endl;
-					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return heartbeat; });
+					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat(); });
 
 					if (heartbeat) {
 						std::cout << "Heartbeat was received!" << std::endl;
-						heartbeat = false;
+						metadata->SetHeartbeat(false);
 					} else {
+						std::cout << "I became a candidate!" << std::endl;
 						metadata->SetStatus(CANDIDATE);
 					}
 					break;
 
 				case CANDIDATE:
-					// vote for itself
-					// request vote
-					metadata->RequestVote();
 					std::cout << "Current term: " << current_term << " " << "- " << "Candidate" << std::endl;
+					metadata->RequestVote();
 					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
 											[&]{ return metadata->GetStatus() == LEADER // elected as the leader
 													 || metadata->GetStatus() == FOLLOWER; }); // found leader
@@ -418,16 +349,16 @@ int LaptopFactory::GetRandomTimeout() {
 void LaptopFactory::
 LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub) {
 	
-	int valid_replicate, prev_last_idx, prev_commited_idx;
+	int valid_replicate, prev_last_idx, prev_commited_idx, current_term;
 	MapOp op;
-	op.term = metadata->GetCurrentTerm();
+	current_term = metadata->GetCurrentTerm();
 	op.arg1 = customer_id;
 	op.arg2 = order_num;
 	
 	// // CONSIDER: if it was a follower, should I execute the last?; no
 
 	// append the record(message, current term) to the log
-	metadata->AppendLog(op);
+	metadata->AppendLog(current_term, customer_id, order_num);
 
 	// set the ack to the log_size
 	metadata->SetAckLength(-1, metadata->GetLogSize());
@@ -435,21 +366,4 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 	// send replicate log message to all of the neighbor nodes
 	valid_replicate = metadata->ReplicateLog();
 	return;
-}
-
-void LaptopFactory::
-FollowerMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary) {
-
-	MapOp op;
-	op.term = 1;
-	op.arg1 = customer_id;
-	op.arg2 = order_num;
-
-	// append the new log and update the last_index
-	metadata->AppendLog(op);
-
-	// if it is not the case that the server was primary or no mapop is found
-	if (req_committed >= 0 && !was_primary) {
-		metadata->ExecuteLog(req_committed);
-	}
 }

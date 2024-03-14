@@ -26,20 +26,18 @@ struct MapOp {
 
 class ServerMetadata {
 private:
-    // int last_idx;
-    // int committed_idx;
-    int leader_id; // -1 
+    int leader_id; 
     int factory_id;
-    bool is_leader = false;
+    int current_term;
     int status;
     int commit_length;
     int log_size;
-
     int voted_for;
     std::set<int> vote_received;
-    int current_term;
     int* sent_length; // reserve sent_length[size] for itself
     int* ack_length; // reserve ack_length[size] for itself
+
+    bool heartbeat;
 
     std::vector<std::shared_ptr<ServerNode>> neighbors;
     std::deque<std::shared_ptr<ClientSocket>> neighbor_sockets; // socket to the backup nodes as a primary
@@ -56,11 +54,12 @@ public:
     int GetStatus();
     int GetVoteReceivedSize();
     int GetCurrentTerm();
-    int GetTermIdx(int idx);
+    int GetTermAtIdx(int idx);
     int GetCommitLength();
     int GetLogSize();
     int GetLastTerm();
     bool GetVotedFor();
+    bool GetHeartbeat();
     std::shared_ptr<ServerNode> GetLeader();
     std::string GetLeaderIp();
     int GetLeaderPort();
@@ -73,13 +72,14 @@ public:
 
     void SetFactoryId(int id);
     void SetLeaderId(int id);
-    void UpdateLastIndex(int idx);
-    void UpdateCommitedIndex(int idx);
     void SetStatus(int status);
     void SetCurrentTerm(int term);
     void SetVotedFor(int id);
+    int SetCommitLength();
+    void SetAckLength(int node_idx, int size);
+    void SetHeartbeat(bool heartbeat);
 
-    void AppendLog(MapOp op);
+    void AppendLog(int op_term, int customer_id, int order_num);
     void ExecuteLog(int idx);
 
     bool IsLeader();
@@ -89,17 +89,20 @@ public:
     void InitNeighbors();
     void InitLeader();
 
-    int ReplicateLog();
-    void RequestVote();
     int SendIdentifier(int identifier, std::shared_ptr<ClientSocket> nei);
+
+    // Request Vote RPC
+    void RequestVote();
     RequestVoteResponse GetVoteResponse(RequestVoteMessage msg);
     RequestVoteResponse RecvVoteResponse(std::shared_ptr<ClientSocket> nei);
-    void SetAckLength(int node_idx, int size);
-    int SendLog(LogRequest lr, std::shared_ptr<ClientSocket> socket);
+
+    // Replicate Log RPC
+    int ReplicateLog();
+    LogResponse GetLogResponse(LogRequest log_req);
+    int SendLogRequest(LogRequest lr, std::shared_ptr<ClientSocket> socket);
     LogResponse RecvLogResponse(std::shared_ptr<ClientSocket> socket);
-    int SetCommitLength();
-    void DropUncommittedLog(int log_size, int req_prefix_length);
     void CommitLog();
+    void DropUncommittedLog(int size, int req_prefix_length);
 };
 
 #endif

@@ -54,7 +54,6 @@ private:
 	void ServerHandler(std::shared_ptr<ServerStub> stub);
 	void CandidateVoteHandler(std::shared_ptr<ServerStub> stub);
 	int AppendLogHandler(std::shared_ptr<ServerStub> stub);
-	void AppendLog(int req_prefix_length, int req_commit_length, int req_op_term, int req_op_arg1, int req_op_arg2);
 
 	void LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub);
 	void FollowerMaintainLog(int customer_id, int order_num, int req_last, int req_committed, bool was_primary);
@@ -65,7 +64,7 @@ public:
 	void EngineerThread(std::shared_ptr<ServerSocket> socket, 
 						int engieer_id, 
 						std::shared_ptr<ServerMetadata> metadata);
-	void PrimaryAdminThread(int id);
+	void LeaderThread(int id);
 	void TimeoutThread();
 	void FollowerThread();
 };

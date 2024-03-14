@@ -16,7 +16,7 @@
 #define DEBUG 0
 
 ServerMetadata::ServerMetadata() 
-: leader_id(-1), factory_id(-1), neighbors(), voted_for(-1), current_term(0), log_size(0), status(1) { }
+: leader_id(-1), factory_id(-1), neighbors(), voted_for(-1), current_term(0), log_size(0), status(1), heartbeat(false) { }
 
 int ServerMetadata::GetLeaderId() {
     return leader_id;
@@ -56,7 +56,7 @@ int ServerMetadata::GetValue(int customer_id) {
     }
 }
 
-int ServerMetadata::GetTermIdx(int idx) {
+int ServerMetadata::GetTermAtIdx(int idx) {
     return smr_log[idx].term;
 }
 
@@ -110,6 +110,10 @@ bool ServerMetadata::GetVotedFor() {
     return voted_for;
 }
 
+bool ServerMetadata::GetHeartbeat() {
+    return heartbeat;
+}
+
 void ServerMetadata::SetLeaderId(int id) {
 	leader_id = id;
     return;
@@ -132,8 +136,16 @@ void ServerMetadata::SetStatus(int status) {
     this->status = status;
 }
 
+void ServerMetadata::SetHeartbeat(bool heartbeat) {
+    this->heartbeat = heartbeat;
+}
 
-void ServerMetadata::AppendLog(MapOp op) {
+void ServerMetadata::AppendLog(int op_term, int customer_id, int order_num) {
+    MapOp op;
+    op.term = op_term;
+    op.arg1 = customer_id;
+    op.arg2 = order_num;
+
     smr_log.push_back(op);
     log_size++;
     return;
@@ -207,6 +219,17 @@ void ServerMetadata::InitLeader() {
     status = FOLLOWER;
     return;
 }
+
+void ServerMetadata::SetAckLength(int node_idx, int size) {
+    // if the node_idx is -1, get the last idx
+    if (node_idx == -1) {
+        node_idx = GetPeerSize();
+    } 
+    
+    // set the ack_length at the node_idx with size
+    ack_length[node_idx] = size;
+}
+
 
 /**
  * Request Vote RPC 
@@ -303,6 +326,10 @@ RequestVoteResponse ServerMetadata::RecvVoteResponse(std::shared_ptr<ClientSocke
     return res;
 }
 
+/**
+ * Replicate Log RPC
+*/
+
 int ServerMetadata::ReplicateLog() {
 
     // for each of the neighbors
@@ -312,7 +339,6 @@ int ServerMetadata::ReplicateLog() {
     LogRequest log_req;
     LogResponse log_res;
     MapOp op;
-    int j;
 
     int follower_id, term, ack, success;
     int cur_prefix_length;
@@ -328,19 +354,18 @@ int ServerMetadata::ReplicateLog() {
         // for all the unsent op, send to the followers
         cur_prefix_length = prefix_length;
         while (cur_prefix_length < log_size) {
-            op_term = smr_log[j].term;
-            op_arg1 = smr_log[j].arg1;
-            op_arg2 = smr_log[j].arg2;
+            op_term = smr_log[cur_prefix_length].term;
+            op_arg1 = smr_log[cur_prefix_length].arg1;
+            op_arg2 = smr_log[cur_prefix_length].arg2;
             log_req.SetLogRequest(factory_id, current_term, cur_prefix_length, prefix_term,
                              commit_length, op_term, op_arg1, op_arg2);
             
             // send the log to the follower
-            SendLog(log_req, socket);
+            SendLogRequest(log_req, socket);
             
             // update the prefix_length logRequest accordingly with the response
             log_res = RecvLogResponse(socket);
 
-            // TODO: ADD LOGIC AT 8
             follower_id = log_res.GetFollowerId();
             term = log_res.GetCurrentTerm();
             ack = log_res.GetAck();
@@ -354,7 +379,6 @@ int ServerMetadata::ReplicateLog() {
                 } else if (sent_length[i] > 0) { // send the previous log
                     sent_length[i]--;
                     cur_prefix_length--;
-                    continue;
                 }
             } else if (term > current_term) { // demote to the follower
                 current_term = term;
@@ -362,24 +386,73 @@ int ServerMetadata::ReplicateLog() {
                 voted_for = -1;
                 return 0;
             }
-
-            j++;
         }
     }
     return 1;
 }
 
-
-
-void ServerMetadata::SetAckLength(int node_idx, int size) {
-    // if the node_idx is -1, get the last idx
-    if (node_idx == -1) {
-        node_idx = GetPeerSize();
-    } 
+LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
     
-    // set the ack_length at the node_idx with size
-    ack_length[node_idx] = size;
+    int req_leader_id, req_current_term, req_prefix_length, req_prefix_term;
+    int req_commit_length, req_op_term, req_op_arg1, req_op_arg2;
+    bool included, can_log;
+    LogResponse log_res;
+
+    // get the information
+    req_leader_id = log_req.GetLeaderId();
+    req_current_term = log_req.GetCurrentTerm();
+    req_prefix_length = log_req.GetPrefixLength();
+    req_prefix_term = log_req.GetPrefixTerm();
+    req_commit_length = log_req.GetCommitLength();
+    req_op_term = log_req.GetOpTerm();
+    req_op_arg1 = log_req.GetOpArg1();
+    req_op_arg2 = log_req.GetOpArg2();
+
+    if (DEBUG) {
+        std::cout << log_req << std::endl;
+    }
+
+    // compare the req_term with the server term
+    if (req_current_term > current_term) {
+        SetCurrentTerm(req_current_term);
+        SetVotedFor(-1);
+        heartbeat = true; // reset the timeout
+    } 
+
+    // if the current was candidate, update the status
+    if (current_term == req_current_term) { // found the leader
+        SetStatus(FOLLOWER);
+        SetLeaderId(req_leader_id);
+    }
+
+    included = (log_size > req_prefix_length);
+    can_log = (log_size >= req_prefix_length) && 
+                (req_prefix_length == 0 || GetTermAtIdx(req_prefix_length - 1) == req_prefix_term);
+
+    if ((current_term == req_current_term) && can_log) {
+        if (!included) {
+            // drop the uncommitted log
+            if (log_size > req_prefix_length) {
+                DropUncommittedLog(log_size, req_prefix_length);
+            }
+
+            // append the log
+            AppendLog(req_op_term, req_op_arg1, req_op_arg2);
+
+            // commit the appended log
+            if (req_commit_length > commit_length) {
+                ExecuteLog(req_prefix_length);
+            }
+        }
+        log_res.SetLogResponse(factory_id, current_term, commit_length, 1); // set yes reponse
+
+    } else {
+        log_res.SetLogResponse(factory_id, current_term, 0, 0); // set no response
+    }
+
+    return log_res;
 }
+
 
 void ServerMetadata::CommitLog() {
     // from the commit_length to log_size, find the maximum index that has majority of the vote received
@@ -410,7 +483,7 @@ void ServerMetadata::CommitLog() {
     return;
 }
 
-int ServerMetadata::SendLog(LogRequest log_req, std::shared_ptr<ClientSocket> socket) {
+int ServerMetadata::SendLogRequest(LogRequest log_req, std::shared_ptr<ClientSocket> socket) {
     SendIdentifier(APPENDLOG_RPC, socket);
 	char buffer[64];
     int size;
@@ -428,8 +501,8 @@ LogResponse ServerMetadata::RecvLogResponse(std::shared_ptr<ClientSocket> socket
     return log_res;
 }
 
-void ServerMetadata::DropUncommittedLog(int log_size, int req_prefix_length) {
-    for (int log_size; log_size < req_prefix_length; log_size++) {
+void ServerMetadata::DropUncommittedLog(int size, int req_prefix_length) {
+    for (; size < req_prefix_length; size++) {
         smr_log.pop_back();
     }
 }
