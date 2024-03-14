@@ -26,13 +26,14 @@ struct MapOp {
 
 class ServerMetadata {
 private:
-    int last_idx;
-    int committed_idx;
+    // int last_idx;
+    // int committed_idx;
     int leader_id; // -1 
     int factory_id;
     bool is_leader = false;
-    int status = 1;
+    int status;
     int commit_length;
+    int log_size;
 
     int voted_for;
     std::set<int> vote_received;
@@ -51,23 +52,24 @@ public:
 
     int GetLeaderId();
     int GetFactoryId();
-    int GetLastIndex();
-    int GetCommittedIndex();
     int GetPeerSize();
+    int GetStatus();
+    int GetVoteReceivedSize();
+    int GetCurrentTerm();
+    int GetTermIdx(int idx);
+    int GetCommitLength();
+    int GetLogSize();
+    int GetLastTerm();
+    bool GetVotedFor();
+    std::shared_ptr<ServerNode> GetLeader();
+    std::string GetLeaderIp();
+    int GetLeaderPort();
     std::vector<MapOp> GetLog();
     MapOp GetOp(int idx);
     std::vector<std::shared_ptr<ServerNode>> GetNeighbors();
     std::deque<std::shared_ptr<ClientSocket>> GetNeighborSockets();
     int GetValue(int customer_id);
     ReplicationRequest GetReplicationRequest(MapOp op);
-    std::shared_ptr<ServerNode> GetLeader();
-    std::string GetLeaderIp();
-    int GetLeaderPort();
-    int GetStatus();
-    int GetVoteReceivedSize();
-    int GetCurrentTerm();
-    int GetTermIdx(int idx);
-    int GetCommitLength();
 
     void SetFactoryId(int id);
     void SetLeaderId(int id);
@@ -85,16 +87,13 @@ public:
 
     void AddNeighbors(std::shared_ptr<ServerNode> node);
     void InitNeighbors();
-    int SendReplicationRequest(MapOp op);
+    void InitLeader();
 
     int ReplicateLog();
     void RequestVote();
     int SendIdentifier(int identifier, std::shared_ptr<ClientSocket> nei);
-    int GetLogSize();
-    int GetLastTerm();
-    bool GetVotedFor();
+    RequestVoteResponse GetVoteResponse(RequestVoteMessage msg);
     RequestVoteResponse RecvVoteResponse(std::shared_ptr<ClientSocket> nei);
-    void InitLeader();
     void SetAckLength(int node_idx, int size);
     int SendLog(LogRequest lr, std::shared_ptr<ClientSocket> socket);
     LogResponse RecvLogResponse(std::shared_ptr<ClientSocket> socket);

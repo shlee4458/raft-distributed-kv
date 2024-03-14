@@ -5,9 +5,9 @@
 
 #include "ServerThread.h"
 
-#define PFA_IDENTIFIER 1
-#define CUSTOMER_IDENTIFIER 2
 #define SERVER_IDENTIFIER 3
+#define CUSTOMER_IDENTIFIER 2
+
 #define UPDATE_REQUEST 1
 #define READ_REQUEST 2
 
@@ -19,7 +19,7 @@
 #define REQUESTVOTE_RPC 0
 #define APPENDLOG_RPC 1
 
-#define DEBUG 0
+#define DEBUG 1
 
 LaptopInfo LaptopFactory::
 GetLaptopInfo(CustomerRequest request, int engineer_id) {
@@ -75,7 +75,12 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 	
 	while (true) {
 		switch (sender) {
-
+			case SERVER_IDENTIFIER:
+				if (DEBUG) {
+					std::cout << "Received a message from another server!!" << std::endl;
+				}
+				ServerHandler(std::move(stub));
+				break;
 			case CUSTOMER_IDENTIFIER:
 				if (DEBUG) {
 					std::cout << "I have received a message from a customer!" << std::endl;
@@ -84,26 +89,8 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 				if (DEBUG) {
 					std::cout << "CONNECTION WITH THE CLIENT HAS BEEN TERMINATED" << std::endl;
 				}
-				return;
 				break;
-			case SERVER_IDENTIFIER:
-				if (DEBUG) {
-					std::cout << "Received a message from another server!!" << std::endl;
-				}
-				// wait for another message to understand if it is vote request or append log request
-				ServerHandler(std::move(stub));
-			// case PFA_IDENTIFIER:
-			// 	if (DEBUG) {
-			// 		std::cout << "I have received a message from the Primary server!" << std::endl;
-			// 	}
-			// 	PfaHandler(std::move(stub));
-			// 	if (DEBUG) {
-			// 		std::cout << "CONNECTION WITH THE SERVER HAS BEEN TERMINATED" << std::endl;
-			// 	}
-			// 	return;
-			// 	break;
 			default:
-				return;
 				break;
 		}
 	}
@@ -117,19 +104,36 @@ void LaptopFactory::ServerHandler(std::shared_ptr<ServerStub> stub) {
 		switch (rpc)
 		{
 			case REQUESTVOTE_RPC:
+				std::cout << "Candidate Vote RPC Received!" << std::endl;
 				CandidateVoteHandler(stub);
 				break;
 			
 			case APPENDLOG_RPC:
+				std::cout << "Append log RPC Received!" << std::endl;
 				AppendLogHandler(stub);
 				break;
 		}
-
 	}
 }
 
-int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
+void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 
+	std::unique_lock<std::mutex> ml(meta_lock, std::defer_lock);
+
+	// receive the request vote message
+	RequestVoteMessage msg;
+	msg = stub->RecvRequestVote();
+
+	// get the vote response to send
+	ml.lock();
+	RequestVoteResponse res = metadata->GetVoteResponse(msg);
+	ml.unlock();
+
+	// send vote response
+	stub->SendVoteResponse(res);
+}
+
+int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
 
 	// get the LogRequest instance from the leader
 	LogRequest request;
@@ -149,52 +153,6 @@ int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
 		rep_cv.notify_one();
 		rep_lock.unlock();
 	}
-}
-
-void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
-
-	std::unique_lock<std::mutex> ml(meta_lock, std::defer_lock);
-
-	// wait for the message to be sent
-	RequestVoteMessage msg;
-	msg = stub->RecvRequestVote();
-	int cand_id = msg.GetId();
-	int cand_current_term = msg.GetCurrentTerm();
-	int cand_log_size = msg.GetLogSize();
-	int cand_last_term = msg.GetLastTerm();
-
-	// if more higher term candidate vote is received
-	ml.lock();
-	if (cand_current_term > metadata->GetCurrentTerm()) {
-		metadata->SetCurrentTerm(cand_current_term);
-		metadata->SetStatus(FOLLOWER);
-		metadata->SetVotedFor(cand_id);
-	}
-	
-	int last_term = metadata->GetLastTerm();
-	int log_size = metadata->GetLogSize();
-	int current_term = metadata->GetCurrentTerm();
-	bool voted_for = metadata->GetVotedFor();
-	
-	bool valid = (cand_last_term > last_term) || 
-				((cand_last_term == last_term) && cand_log_size >= log_size);
-
-	RequestVoteResponse res;
-	if (valid && cand_current_term == current_term && voted_for == cand_id) {
-		res.SetRequestVoteResponse(metadata->GetFactoryId(), current_term, true);
-	} else {
-		res.SetRequestVoteResponse(metadata->GetFactoryId(), current_term, false);
-	}
-	ml.unlock();
-
-	stub->SendVoteResponse(res);
-
-	// if the vote received is a valid, 
-		// change the status to the follower
-		// set voted for to the id
-
-	// if not valid,
-		// vote against
 }
 
 void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub> stub) {
@@ -364,7 +322,7 @@ void LaptopFactory::FollowerThread() {
 		}
 
 		// send to the primary that the log update is complete
-		stub->RespondToPrimary();
+		stub->SendLogResponse(log_res);
 		if (DEBUG) {
 			std::cout << "I have responded to the primary!" << std::endl;
 		}
@@ -392,7 +350,6 @@ void LaptopFactory::AppendLog(int req_prefix_length, int req_commit_length, int 
 		metadata->ExecuteLog(req_prefix_length);
 	}
 }
-
 
 void LaptopFactory::TimeoutThread() {
 	int timeout, current_term;
@@ -468,11 +425,6 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 	op.arg2 = order_num;
 	
 	// // CONSIDER: if it was a follower, should I execute the last?; no
-	// prev_last_idx = metadata->GetLastIndex();
-	// prev_commited_idx = metadata->GetCommittedIndex();
-	// if (prev_last_idx != prev_commited_idx) {
-	// 	metadata->ExecuteLog(prev_last_idx);
-	// }
 
 	// append the record(message, current term) to the log
 	metadata->AppendLog(op);
@@ -501,82 +453,3 @@ FollowerMaintainLog(int customer_id, int order_num, int req_last, int req_commit
 		metadata->ExecuteLog(req_committed);
 	}
 }
-
-// bool LaptopFactory::PfaHandler(std::shared_ptr<ServerStub> stub) {
-
-// 	ReplicationRequest request;
-// 	while (true) {
-// 		request = stub->ReceiveReplication();
-		
-// 		// Primary Failure: set the leader_id to -1
-// 		if (!request.IsValid()) {
-// 			metadata->SetLeaderId(-1);
-// 			std::cout << "Primary Server went down, gracefully exiting" << std::endl;
-// 			return 0;
-// 		}
-
-// 		std::shared_ptr<IdleAdminRequest> idle_req = 
-// 			std::shared_ptr<IdleAdminRequest>(new IdleAdminRequest);
-
-// 		idle_req->repl_request = request;
-// 		idle_req->stub = stub;
-
-// 		rep_lock.lock();
-// 		req.push(std::move(idle_req));
-// 		rep_cv.notify_one();
-// 		rep_lock.unlock();
-// 	}
-// }
-
-// void LaptopFactory::IdleAdminThread(int id) {
-// 	std::unique_lock<std::mutex> rl(rep_lock, std::defer_lock), 
-// 								 ml(meta_lock, std::defer_lock);
-// 	std::shared_ptr<ServerStub> stub;
-
-// 	int last_idx, committed_idx, leader_id;
-// 	int customer_id, order_num;
-
-// 	while (true) {
-// 		rl.lock();
-// 		if (req.empty()) {
-// 			rep_cv.wait(rl, [this]{ return !req.empty(); });
-// 		}
-// 		if (DEBUG) {
-// 			std::cout << "Successfully received the replication request" << std::endl;
-// 		}
-// 		auto request = std::move(req.front());
-// 		req.pop();
-// 		rl.unlock();
-
-// 		// get the information
-// 		last_idx = request->repl_request.GetLastIdx();
-// 		committed_idx = request->repl_request.GetCommitedIdx();
-// 		leader_id = request->repl_request.GetLeaderId();
-// 		customer_id = request->repl_request.GetArg1();
-// 		order_num = request->repl_request.GetArg2();
-// 		stub = request->stub;
-// 		if (DEBUG) {
-// 			std::cout << request << std::endl;
-// 		}
-		
-// 		// check if the current server was the primary
-// 		bool was_primary = metadata->IsLeader();
-
-// 		// update the metadata; commited index, last index
-// 		if (was_primary) {
-// 			metadata->SetLeaderId(leader_id);
-// 			if (DEBUG) {
-// 				std::cout << "I have set the primary id to: " << leader_id << std::endl;
-// 			}
-// 		}
-// 		ml.lock();
-// 		IdleMaintainLog(customer_id, order_num, last_idx, committed_idx, was_primary);
-// 		ml.unlock();
-
-// 		// send to the primary that the log update is complete
-// 		stub->RespondToPrimary();
-// 		if (DEBUG) {
-// 			std::cout << "I have responded to the primary!" << std::endl;
-// 		}
-// 	}
-// }

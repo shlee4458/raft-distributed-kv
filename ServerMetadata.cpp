@@ -4,20 +4,19 @@
 #include <string.h>
 #include <iostream>
 
-#define PFA_IDENTIFIER 1
-
 #define FOLLOWER 1
 #define LEADER 2
 #define CANDIDATE 3
 
-#define SERVER_IDENTIFIER 3
-#define DEBUG 0
+#define SERVER_IDENTIFIER 1
 
 #define REQUESTVOTE_RPC 0
 #define APPENDLOG_RPC 1
 
+#define DEBUG 0
+
 ServerMetadata::ServerMetadata() 
-: last_idx(-1), committed_idx(-1), leader_id(-1), factory_id(-1), neighbors(), voted_for(-1), current_term(0) { }
+: leader_id(-1), factory_id(-1), neighbors(), voted_for(-1), current_term(0), log_size(0), status(1) { }
 
 int ServerMetadata::GetLeaderId() {
     return leader_id;
@@ -25,14 +24,6 @@ int ServerMetadata::GetLeaderId() {
 
 int ServerMetadata::GetFactoryId() {
     return factory_id;
-}
-
-int ServerMetadata::GetCommittedIndex() {
-    return committed_idx;
-}
-
-int ServerMetadata::GetLastIndex() {
-    return last_idx;
 }
 
 std::vector<std::shared_ptr<ServerNode>> ServerMetadata::GetNeighbors() {
@@ -65,19 +56,58 @@ int ServerMetadata::GetValue(int customer_id) {
     }
 }
 
-ReplicationRequest ServerMetadata::GetReplicationRequest(MapOp op) {
-    int op_code = op.term;
-    int op_arg1 = op.arg1;
-    int op_arg2 = op.arg2;
-    return ReplicationRequest(last_idx, committed_idx, leader_id, op_code, op_arg1, op_arg2);
-}
-
 int ServerMetadata::GetTermIdx(int idx) {
     return smr_log[idx].term;
 }
 
 int ServerMetadata::GetCommitLength() {
     return commit_length;
+}
+
+std::shared_ptr<ServerNode> ServerMetadata::GetLeader() {
+    for (std::shared_ptr<ServerNode> nei: GetNeighbors()) {
+        if (nei->id == GetLeaderId()) {
+            return nei;
+        }
+    }
+}
+
+std::string ServerMetadata::GetLeaderIp() {
+    std::shared_ptr<ServerNode> leader = GetLeader();
+    return leader->ip;
+}
+
+int ServerMetadata::GetLeaderPort() {
+    std::shared_ptr<ServerNode> leader = GetLeader();
+    return leader->port;
+}
+
+int ServerMetadata::GetStatus() {
+    return status;
+}
+
+int ServerMetadata::GetVoteReceivedSize() {
+    return vote_received.size();
+}
+
+int ServerMetadata::GetCurrentTerm() {
+    return current_term;
+}
+
+int ServerMetadata::GetLogSize() {
+    return log_size;
+}
+
+int ServerMetadata::GetLastTerm() {
+    int last_term = 0;
+    if (log_size) {
+        last_term = smr_log[log_size - 1].term;
+    }
+    return last_term;
+}
+
+bool ServerMetadata::GetVotedFor() {
+    return voted_for;
 }
 
 void ServerMetadata::SetLeaderId(int id) {
@@ -90,19 +120,22 @@ void ServerMetadata::SetFactoryId(int id) {
     return;
 }
 
-void ServerMetadata::UpdateLastIndex(int idx) {
-    last_idx = idx;
-    return;
+void ServerMetadata::SetCurrentTerm(int term) {
+    current_term = term;
 }
 
-void ServerMetadata::UpdateCommitedIndex(int idx) {
-    committed_idx = idx;
-    return;
+void ServerMetadata::SetVotedFor(int id) {
+    voted_for = id;
 }
+
+void ServerMetadata::SetStatus(int status) {
+    this->status = status;
+}
+
 
 void ServerMetadata::AppendLog(MapOp op) {
     smr_log.push_back(op);
-    last_idx++;
+    log_size++;
     return;
 }
 
@@ -118,7 +151,7 @@ void ServerMetadata::ExecuteLog(int idx) {
         std::cout << "Record Updated for client: " << customer_id 
             << " Order Num: " << order_num << std::endl;
     } 
-    committed_idx++;
+    commit_length++;
     return;
 }
 
@@ -150,85 +183,42 @@ void ServerMetadata::InitNeighbors() {
 	}
 }
 
-int ServerMetadata::SendReplicationRequest(MapOp op) {
+int ServerMetadata::SendIdentifier(int identifier, std::shared_ptr<ClientSocket> nei) {
+	Identifier iden;
+    iden.SetIdentifier(identifier);
+    char buffer[4];
+    int size = iden.Size();
+    iden.Marshal(buffer);
+    return nei->Send(buffer, size, 0);
+}
 
-	char buffer[32];
-    int size;
+bool ServerMetadata::WonElection() {
+    return GetVoteReceivedSize() > GetPeerSize() * 2;
+}
 
-    // get replication request object
-	ReplicationRequest request = GetReplicationRequest(op);
-	request.Marshal(buffer);
-	size = request.Size();
-
-	int total_response = 0;
-	char response_buffer[4];
-	Identifier identifier;
-    std::deque<std::shared_ptr<ClientSocket>> new_primary_sockets;
-
-    // iterate over all the neighbor nodes, and send the replication request
-	for (auto const& socket : neighbor_sockets) {
-
-		if (socket->Recv(response_buffer, sizeof(identifier), 0)) {
-			identifier.Unmarshal(response_buffer);
-			total_response += identifier.GetIdentifier();
-		}
-        new_primary_sockets.push_back(socket);
-	}
-
-    // update with the sockets excluding failed sockets
-    neighbor_sockets = new_primary_sockets; 
-    if (DEBUG) {
-        std::cout << request << std::endl;
+void ServerMetadata::InitLeader() {
+    int size = GetPeerSize() + 1;
+    this->sent_length[size];
+    this->ack_length[size];
+    for (int i = 0; i < size; i++) {
+        sent_length[i] = log_size;
+        ack_length[i] = 0;
     }
-    
-    // check if the message received matches the size of the neighbors
-	if (total_response != GetPeerSize()) {
-        if (DEBUG) {
-            // std::cout << GetPeerSize() << " " << total_response << std::endl;
-            std::cout << "Some neighbor has not updated the log, so I am not executing the log!" << std::endl;
-        }
-		return 0;
-	}
-
-    return 1;
+    status = FOLLOWER;
+    return;
 }
 
-std::shared_ptr<ServerNode> ServerMetadata::GetLeader() {
-    for (std::shared_ptr<ServerNode> nei: GetNeighbors()) {
-        if (nei->id == GetLeaderId()) {
-            return nei;
-        }
-    }
-}
-
-std::string ServerMetadata::GetLeaderIp() {
-    std::shared_ptr<ServerNode> leader = GetLeader();
-    return leader->ip;
-}
-
-int ServerMetadata::GetLeaderPort() {
-    std::shared_ptr<ServerNode> leader = GetLeader();
-    return leader->port;
-}
-
-int ServerMetadata::GetStatus() {
-    return status;
-}
-
-void ServerMetadata::SetStatus(int status) {
-    this->status = status;
-}
-
+/**
+ * Request Vote RPC 
+*/
 
 void ServerMetadata::RequestVote() {
-    int current_status, voted, voter_term, voter_id;
+    int current_status, voted, voter_term, voter_id, last_term;
 
     voted_for = factory_id;
+    last_term = GetLastTerm();
     vote_received.insert(factory_id);
     current_term++;
-
-    int log_size = GetLogSize();
-    int last_term = GetLastTerm();
 
     // create the RequestVoteMessage
     RequestVoteMessage msg;
@@ -242,13 +232,14 @@ void ServerMetadata::RequestVote() {
     // request vote to all the neighbors
     for (std::shared_ptr<ClientSocket> nei : GetNeighborSockets()) {
 
+        // TODO: consider having thread pool of size peersize - 1 collect votes
         // send the identifier that it is request vote rpc
         SendIdentifier(REQUESTVOTE_RPC, nei);
 
         // send the request vote message
         nei->Send(buffer, size, 0);
 
-        // receive the vote
+        // receive the vote response
         res = RecvVoteResponse(nei);
         voted = res.GetVoted();
         voter_term = res.GetCurrentTerm();
@@ -260,6 +251,7 @@ void ServerMetadata::RequestVote() {
 
             // if the vote is majority
             if (WonElection()) {
+                std::cout << "Won the election!" << std::endl;
                 InitLeader();
                 return;
             }
@@ -275,62 +267,31 @@ void ServerMetadata::RequestVote() {
     return; // split vote happened
 }
 
-void ServerMetadata::InitLeader() {
-    int size = GetPeerSize() + 1;
-    int log_size = GetLogSize() + 1;
-    this->sent_length[size];
-    this->ack_length[size];
-    for (int i = 0; i < size; i++) {
-        sent_length[i] = log_size;
-        ack_length[i] = 0;
-    }
-    return;
-}
+RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
+    
+    int cand_id = msg.GetId();
+	int cand_current_term = msg.GetCurrentTerm();
+	int cand_log_size = msg.GetLogSize();
+	int cand_last_term = msg.GetLastTerm();
+	int last_term = GetLastTerm();
 
-int ServerMetadata::SendIdentifier(int identifier, std::shared_ptr<ClientSocket> nei) {
-	Identifier iden;
-    iden.SetIdentifier(identifier);
-    char buffer[4];
-    int size = iden.Size();
-    iden.Marshal(buffer);
-    return nei->Send(buffer, size, 0);
-}
+	// if more higher term candidate vote is received
+	if (cand_current_term > current_term) {
+		SetCurrentTerm(cand_current_term);
+		SetStatus(FOLLOWER);
+		SetVotedFor(cand_id);
+	}
+	
+	bool valid = (cand_last_term > last_term) || 
+				((cand_last_term == last_term) && cand_log_size >= log_size);
 
-int ServerMetadata::GetVoteReceivedSize() {
-    return vote_received.size();
-}
-
-bool ServerMetadata::WonElection() {
-    return GetVoteReceivedSize() > GetPeerSize() * 2;
-}
-
-int ServerMetadata::GetCurrentTerm() {
-    return current_term;
-}
-
-void ServerMetadata::SetCurrentTerm(int term) {
-    current_term = term;
-}
-
-void ServerMetadata::SetVotedFor(int id) {
-    voted_for = id;
-}
-
-int ServerMetadata::GetLogSize() {
-    return smr_log.size();
-}
-
-int ServerMetadata::GetLastTerm() {
-    int last_term = 0;
-    int log_size = GetLogSize();
-    if (log_size) {
-        last_term = smr_log[log_size - 1].term;
-    }
-    return last_term;
-}
-
-bool ServerMetadata::GetVotedFor() {
-    return voted_for;
+	RequestVoteResponse res;
+	if (valid && cand_current_term == current_term && voted_for == cand_id) {
+		res.SetRequestVoteResponse(factory_id, current_term, true);
+	} else {
+		res.SetRequestVoteResponse(factory_id, current_term, false);
+	}
+    return res;
 }
 
 RequestVoteResponse ServerMetadata::RecvVoteResponse(std::shared_ptr<ClientSocket> nei) {
@@ -342,29 +303,19 @@ RequestVoteResponse ServerMetadata::RecvVoteResponse(std::shared_ptr<ClientSocke
     return res;
 }
 
-void ServerMetadata::SetAckLength(int node_idx, int size) {
-    // if the node_idx is -1, get the last idx
-    if (node_idx == -1) {
-        node_idx = GetPeerSize();
-    } 
-    
-    // set the ack_length at the node_idx with size
-    ack_length[node_idx] = size;
-}
-
 int ServerMetadata::ReplicateLog() {
 
     // for each of the neighbors
         // get the length of the item sent to the neighbor
-    int log_size, prefix_length, prefix_term, op_term, op_arg1, op_arg2;
+    int prefix_length, prefix_term, op_term, op_arg1, op_arg2;
     std::shared_ptr<ClientSocket> socket;
     LogRequest log_req;
     LogResponse log_res;
     MapOp op;
-    int log_size = last_idx;
     int j;
 
     int follower_id, term, ack, success;
+    int cur_prefix_length;
 
     for (int i = 0; i < GetPeerSize(); i++) {
         socket = neighbor_sockets[i];
@@ -375,11 +326,12 @@ int ServerMetadata::ReplicateLog() {
         }
 
         // for all the unsent op, send to the followers
-        while (prefix_length < log_size) {
+        cur_prefix_length = prefix_length;
+        while (cur_prefix_length < log_size) {
             op_term = smr_log[j].term;
             op_arg1 = smr_log[j].arg1;
             op_arg2 = smr_log[j].arg2;
-            log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
+            log_req.SetLogRequest(factory_id, current_term, cur_prefix_length, prefix_term,
                              commit_length, op_term, op_arg1, op_arg2);
             
             // send the log to the follower
@@ -399,6 +351,10 @@ int ServerMetadata::ReplicateLog() {
                     sent_length[i] = ack;
                     ack_length[i] = ack;
                     CommitLog();
+                } else if (sent_length[i] > 0) { // send the previous log
+                    sent_length[i]--;
+                    cur_prefix_length--;
+                    continue;
                 }
             } else if (term > current_term) { // demote to the follower
                 current_term = term;
@@ -411,6 +367,18 @@ int ServerMetadata::ReplicateLog() {
         }
     }
     return 1;
+}
+
+
+
+void ServerMetadata::SetAckLength(int node_idx, int size) {
+    // if the node_idx is -1, get the last idx
+    if (node_idx == -1) {
+        node_idx = GetPeerSize();
+    } 
+    
+    // set the ack_length at the node_idx with size
+    ack_length[node_idx] = size;
 }
 
 void ServerMetadata::CommitLog() {

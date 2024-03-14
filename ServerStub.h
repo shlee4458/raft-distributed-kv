@@ -20,9 +20,7 @@ public:
 	int ShipLaptop(LaptopInfo info);
 	int ReturnRecord(std::shared_ptr<CustomerRecord> record);
 
-	ReplicationRequest ReceiveReplication() const;
 	int IdentifySender() const;
-	int RespondToPrimary() const;
 	int SendIsLeader(int is_leader);
 	int SendLeaderInfo(LeaderInfo info);
 	RequestVoteMessage RecvRequestVote();

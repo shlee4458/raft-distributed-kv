@@ -21,11 +21,6 @@ struct PrimaryAdminRequest {
 	std::shared_ptr<ServerStub> stub;
 };
 
-// struct IdleAdminRequest {
-// 	ReplicationRequest repl_request;
-// 	std::shared_ptr<ServerStub> stub;
-// };
-
 struct FollowerRequest {
 	LogRequest log_request;
 	std::shared_ptr<ServerStub> stub;
@@ -34,7 +29,6 @@ struct FollowerRequest {
 class LaptopFactory {
 private:
 	std::queue<std::shared_ptr<PrimaryAdminRequest>> erq;
-	// std::queue<std::shared_ptr<IdleAdminRequest>> req;
 	std::queue<std::shared_ptr<FollowerRequest>> req;
 
 	std::mutex erq_lock;
@@ -56,7 +50,6 @@ private:
 	LaptopInfo CreateLaptop(CustomerRequest order, int engineer_id, std::shared_ptr<ServerStub> stub);
 	int ReadRecord(int customer_id);
 
-	bool PfaHandler(std::shared_ptr<ServerStub> stub);
 	void CustomerHandler(int engineer_id, std::shared_ptr<ServerStub> stub);
 	void ServerHandler(std::shared_ptr<ServerStub> stub);
 	void CandidateVoteHandler(std::shared_ptr<ServerStub> stub);
@@ -73,7 +66,6 @@ public:
 						int engieer_id, 
 						std::shared_ptr<ServerMetadata> metadata);
 	void PrimaryAdminThread(int id);
-	void IdleAdminThread(int id);
 	void TimeoutThread();
 	void FollowerThread();
 };
