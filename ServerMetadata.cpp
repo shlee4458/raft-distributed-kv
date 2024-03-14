@@ -5,7 +5,11 @@
 #include <iostream>
 
 #define PFA_IDENTIFIER 1
+
 #define FOLLOWER 1
+#define LEADER 2
+#define CANDIDATE 3
+
 #define SERVER_IDENTIFIER 3
 #define DEBUG 0
 
@@ -360,6 +364,8 @@ int ServerMetadata::ReplicateLog() {
     int log_size = last_idx;
     int j;
 
+    int follower_id, term, ack, success;
+
     for (int i = 0; i < GetPeerSize(); i++) {
         socket = neighbor_sockets[i];
         prefix_length = sent_length[i];
@@ -383,11 +389,57 @@ int ServerMetadata::ReplicateLog() {
             log_res = RecvLogResponse(socket);
 
             // TODO: ADD LOGIC AT 8
-            
-        }
+            follower_id = log_res.GetFollowerId();
+            term = log_res.GetCurrentTerm();
+            ack = log_res.GetAck();
+            success = log_res.GetSuccess();
 
+            if (term == current_term && status == LEADER) {
+                if (success && ack > ack_length[i]) {
+                    sent_length[i] = ack;
+                    ack_length[i] = ack;
+                    CommitLog();
+                }
+            } else if (term > current_term) { // demote to the follower
+                current_term = term;
+                status = FOLLOWER;
+                voted_for = -1;
+                return 0;
+            }
+
+            j++;
+        }
+    }
+    return 1;
+}
+
+void ServerMetadata::CommitLog() {
+    // from the commit_length to log_size, find the maximum index that has majority of the vote received
+    int commit_until, count;
+    for (int i = commit_length; i < GetLogSize(); i++) {
+        count = 0;
+        for (int j = 0; j < GetPeerSize(); j++) {
+            if (ack_length[j] >= i) {
+                count++;
+            }
+        }
+        if (count * 2 > GetPeerSize()) { // ack by the majority, commit
+            commit_until = i;
+        }
     }
 
+    // no more item to commit
+    if (!commit_until) {
+        return;
+    }
+
+    // if there exists log to commit
+    for (int i = commit_length; i < commit_until; i++) {
+        ExecuteLog(i);
+    }
+
+    commit_length = commit_until;
+    return;
 }
 
 int ServerMetadata::SendLog(LogRequest log_req, std::shared_ptr<ClientSocket> socket) {

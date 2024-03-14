@@ -461,7 +461,7 @@ int LaptopFactory::GetRandomTimeout() {
 void LaptopFactory::
 LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub) {
 	
-	int response_received, prev_last_idx, prev_commited_idx;
+	int valid_replicate, prev_last_idx, prev_commited_idx;
 	MapOp op;
 	op.term = metadata->GetCurrentTerm();
 	op.arg1 = customer_id;
@@ -481,15 +481,7 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 	metadata->SetAckLength(-1, metadata->GetLogSize());
 
 	// send replicate log message to all of the neighbor nodes
-	response_received = metadata->ReplicateLog();
-
-	// if the number of response_received does not match the neighbor size
-	if (!response_received) {
-		return; // return without executing the log
-	}
-
-	// execute log at the last index, and update the committed_index
-	metadata->ExecuteLog(metadata->GetLastIndex());
+	valid_replicate = metadata->ReplicateLog();
 	return;
 }
 

@@ -100,6 +100,7 @@ public:
     LogResponse RecvLogResponse(std::shared_ptr<ClientSocket> socket);
     int SetCommitLength();
     void DropUncommittedLog(int log_size, int req_prefix_length);
+    void CommitLog();
 };
 
 #endif
