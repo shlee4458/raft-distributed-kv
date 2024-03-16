@@ -110,10 +110,8 @@ Common
 ## Modification: Send the client leader info instead of follower rerouting request to the leader
 In my raft implemetation, if the server is a follower and the request type is update, client opens a new socket to communicate directly with the leader. The decision was to accomodate with the factory implementation that the server who updates sends back the laptop information to the client. Instead of follower receiving the laptop information from the leader and sending back the laptop information to the server, I believe the modification improves the network performance. For this, I added one more layer of communication when the server and client initializes socket connection. Leader sends client whether the current server is a leader or follower, and client acts accordingly. 
 
-## Design choices for ownership of objects 
-I decided to store the server information like factory id, primary id along with customer record related information in the metadata class. For simplicity, I included communication logic between servers -- replication request -- within the metadata class, instead of including all the communication logic within the ServerStub class. Metadata object is a singleton object that stays within the LaptopFactory object.
-
-LaptopFactory object has an ownership of all ServerSockets that are open in the main thread. using a deque of shared_ptr of the stubs. Storing the stub object that has ServerSocket into a container was necessary to prevent server losing access to the ServerSocket object when the blocking socket recv function is called when the stub object goes out of scope and gets destroyed.
+## Detail: Server initialization buffer
+When server starts, I gave each server 5 seconds to allow all other 4 servers to have opened.
 
 ## Reparing server failure
 For the simplicity of the problem, the program assumes that repairing of the failed backup server is done by primary server. Despite some or all the backup servers' failure, primary server continue to process the client's requests and send replication message to the backup server that are running. When the next client's request, either read or update request, is sent to the primary server, primary server will try to connect with all the failed server nodes that is stored in the metadata object. For all the backup servers that are recovered, primary server will iteratively send all the Map operation stored in the log vector object, sequentially. 

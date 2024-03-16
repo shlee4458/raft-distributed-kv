@@ -50,11 +50,11 @@ int main(int argc, char *argv[]) {
 		node->port = atoi(argv[i + 2]);
 		std::cout << "Created peer node: " << j + 1 << std::endl;
 
-		metadata->AddNeighbors(std::move(node));
+		metadata->AddNeighbors(std::move(node), j);
 	}
 
 	// give 5 seconds to allow all servers to boot, and connect with the neighbors
-	std::this_thread::sleep_for(std::chrono::seconds(5));
+	// std::this_thread::sleep_for(std::chrono::seconds(5));
 	metadata->InitNeighbors(); 
 
 	// create the primary admin thread
@@ -64,13 +64,13 @@ int main(int argc, char *argv[]) {
 
 	// create the follower admin thread
 	std::thread follower_thread(&LaptopFactory::FollowerThread,
-			&factory, engineer_cnt++);
+			&factory);
 	thread_vector.push_back(std::move(follower_thread));	
 	
 	// create the candidate thread
 		// this will initialize
 	std::thread timeout_thread(&LaptopFactory::TimeoutThread,
-			&factory);
+			&factory, metadata);
 	thread_vector.push_back(std::move(timeout_thread));
 
 	// TODO: consider changing to have two different sockets for appendRPC & voteRPC
@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
 	while ((new_socket = socket.Accept())) {
 		std::cout << "I have received the connection request from the primary" << std::endl;
 		std::thread engineer_thread(&LaptopFactory::EngineerThread, &factory, 
-				std::move(new_socket), engineer_cnt++, metadata);
+				std::move(new_socket), engineer_cnt++);
 		thread_vector.push_back(std::move(engineer_thread));
 	}
 	return 0;

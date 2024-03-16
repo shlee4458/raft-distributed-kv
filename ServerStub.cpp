@@ -67,6 +67,7 @@ RequestVoteMessage ServerStub::RecvRequestVote() {
 		msg.Unmarshal(buffer);
 		return msg;
 	}
+	return msg;
 }
 
 int ServerStub::SendVoteResponse(RequestVoteResponse res) {

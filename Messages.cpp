@@ -398,7 +398,7 @@ void LeaderInfo::Marshal(char *buffer) {
 	offset += sizeof(net_ip2);
 	memcpy(buffer + offset, &net_ip3, sizeof(net_ip3));
 	offset += sizeof(net_ip3);
-	memcpy(buffer + offset, &port, sizeof(port));
+	memcpy(buffer + offset, &net_port, sizeof(net_port));
 }
 
 void LeaderInfo::Unmarshal(char *buffer) {

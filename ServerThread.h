@@ -15,7 +15,7 @@
 #include "ServerSocket.h"
 #include "ServerMetadata.h"
 
-struct PrimaryAdminRequest {
+struct LeaderRequest {
 	LaptopInfo laptop;
 	std::promise<LaptopInfo> prom;
 	std::shared_ptr<ServerStub> stub;
@@ -28,7 +28,7 @@ struct FollowerRequest {
 
 class LaptopFactory {
 private:
-	std::queue<std::shared_ptr<PrimaryAdminRequest>> erq;
+	std::queue<std::shared_ptr<LeaderRequest>> erq;
 	std::queue<std::shared_ptr<FollowerRequest>> req;
 
 	std::mutex erq_lock;
@@ -62,10 +62,9 @@ private:
 
 public:
 	void EngineerThread(std::shared_ptr<ServerSocket> socket, 
-						int engieer_id, 
-						std::shared_ptr<ServerMetadata> metadata);
+						int engieer_id);
 	void LeaderThread(int id);
-	void TimeoutThread();
+	void TimeoutThread(std::shared_ptr<ServerMetadata> metadata);
 	void FollowerThread();
 };
 

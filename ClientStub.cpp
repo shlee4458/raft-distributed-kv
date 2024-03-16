@@ -39,16 +39,24 @@ CustomerRecord ClientStub::ReadRecord(CustomerRequest request) {
 
 int ClientStub::SendIdentifier(Identifier identifier) {
 	char buffer[4];
-	char leader_buffer[4];
-	Identifier is_leader;
+
 
 	identifier.Marshal(buffer);
 	if (socket.Send(buffer, identifier.Size(), 0)) {
-		if (socket.Recv(leader_buffer, 4, 0)) {
-			is_leader.Unmarshal(leader_buffer);
-			return is_leader.GetIdentifier();
-		}
+		return 1;
+
 	}
+	return 0;
+}
+
+int ClientStub::RecvIsLeader() {
+	char leader_buffer[4];
+	Identifier is_leader;
+	if (socket.Recv(leader_buffer, 4, 0)) {
+		is_leader.Unmarshal(leader_buffer);
+		return is_leader.GetIdentifier();
+	}
+	return -1;
 }
 
 LeaderInfo ClientStub::RecvLeaderInfo() {
@@ -59,4 +67,5 @@ LeaderInfo ClientStub::RecvLeaderInfo() {
 		info.Unmarshal(buffer);
 		return info;
 	}
+	return info;
 }

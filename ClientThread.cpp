@@ -20,6 +20,7 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 	CustomerRecord record;
 	Identifier identifier;
 	int is_leader;
+	int exit_requested = false;
 
 	this->customer_id = customer_id;
 	this->num_requests = num_requests;
@@ -34,25 +35,21 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 	identifier.SetIdentifier(CLIENT_IDENTIFIER);
 	stub.SendIdentifier(identifier);
 	is_leader = stub.RecvIsLeader();
-	switch (is_leader)
-	{
-		case LEADER:
-			break;
-		case FOLLOWER:
-			// receive the ip, port from the follower
-			LeaderInfo info;
-			info = stub.RecvLeaderInfo();
-			ip = info.GetIp();
-			port = info.GetPort();
 
-			if (!stub.Init(ip, port)) {
-				std::cout << "Thread " << customer_id << " failed to connect" << std::endl;
-				return;
-			}			
-			break;
-		default:
-			std::cout << "identifier not sent" << std::endl;
-			break;
+	// if the request type is update and the is not leader
+	if (is_leader == FOLLOWER && request_type == UPDATE_REQUEST) {
+		LeaderInfo info;
+		info = stub.RecvLeaderInfo();
+		ip = info.GetIp();
+		port = info.GetPort();
+
+		if (!stub.Init(ip, port)) {
+			std::cout << "Thread " << customer_id << " failed to connect" << std::endl;
+			return;
+		}
+		
+	} else if (is_leader == 0) {
+		std::cout << "identifier not sent" << std::endl;
 	}
 
 	for (int i = 0; i < num_requests; i++) {
@@ -67,7 +64,7 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 				// Primary server failure; exit gracefully
 				if (laptop.GetCustomerId() == LAPTOP_DEFAULT) {
 					std::cout << "Primary server went down, graceuflly exiting" << std::endl;
-					return;
+					exit_requested = true;
 				}
 				break;
 			case READ_REQUEST:
@@ -82,13 +79,17 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 				// Backup server failure; exit gracefully
 				if (record.GetCustomerId() == RECORD_DEFAULT) {
 					std::cout << "Server went down, graceuflly exiting" << std::endl;
-					return;
+					exit_requested = true;
 				}
 				break;
 			default:
 				break;
 		}
 		timer.EndAndMerge();
+
+		if (exit_requested) {
+			return;
+		}
 	}
 }
 

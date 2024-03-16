@@ -5,7 +5,7 @@
 
 #include "ServerThread.h"
 
-#define SERVER_IDENTIFIER 3
+#define SERVER_IDENTIFIER 1
 #define CUSTOMER_IDENTIFIER 2
 
 #define UPDATE_REQUEST 1
@@ -39,8 +39,8 @@ CreateLaptop(CustomerRequest request, int engineer_id, std::shared_ptr<ServerStu
 	std::promise<LaptopInfo> prom;
 	std::future<LaptopInfo> fut = prom.get_future();
 
-	std::shared_ptr<PrimaryAdminRequest> req = 
-		std::shared_ptr<PrimaryAdminRequest>(new PrimaryAdminRequest);
+	std::shared_ptr<LeaderRequest> req = 
+		std::shared_ptr<LeaderRequest>(new LeaderRequest);
 	req->laptop = laptop;
 	req->prom = std::move(prom);
 	req->stub = stub;
@@ -59,11 +59,10 @@ CreateLaptop(CustomerRequest request, int engineer_id, std::shared_ptr<ServerStu
 */
 void LaptopFactory::
 EngineerThread(std::shared_ptr<ServerSocket> socket, 
-				int engieer_id, 
-				std::shared_ptr<ServerMetadata> metadata) {
+				int engieer_id) {
 	
 	int sender;
-	this->metadata = metadata;
+	// this->metadata = metadata;
 	auto stub = std::make_shared<ServerStub>(); // stub is only destroyed when the factory goes out of scope
 	stub->Init(std::move(socket));
 	sender = stub->IdentifySender();
@@ -139,6 +138,7 @@ int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
 	LogRequest request;
 	while (true) {
 		request = stub->RecvLogRequest();
+		std::cout << "Log Request Received!" << std::endl;
 		
 		// check if the log request received is valid, and get LogRequestResponse with the info
 
@@ -249,13 +249,6 @@ void LaptopFactory::FollowerThread() {
 	std::shared_ptr<ServerStub> stub;
 	LogResponse log_res;
 
-	int req_leader_id, req_current_term, req_prefix_length, req_prefix_term;
-	int req_commit_length, req_op_term, req_op_arg1, req_op_arg2;
-	int current_term = metadata->GetCurrentTerm();
-	int factory_id = metadata->GetFactoryId();
-
-	bool can_log, included;
-
 	while (true) {
 		rl.lock();
 		if (req.empty()) {
@@ -283,16 +276,16 @@ void LaptopFactory::FollowerThread() {
 	}
 }
 
-void LaptopFactory::TimeoutThread() {
+void LaptopFactory::TimeoutThread(std::shared_ptr<ServerMetadata> metadata) {
 	int timeout, current_term;
 	std::unique_lock<std::mutex> tl(timeout_lock, std::defer_lock);
 
 	// if the current state is;
 	while (true) {
+		current_term = metadata->GetCurrentTerm();
+		timeout = GetRandomTimeout();
 		switch (metadata->GetStatus())
 			{
-				current_term = metadata->GetCurrentTerm();
-				timeout = GetRandomTimeout();
 				case FOLLOWER:
 					std::cout << "Current term: " << current_term << " " << "- " << "Follower" << std::endl;
 					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat(); });
@@ -339,21 +332,11 @@ void LaptopFactory::TimeoutThread() {
 	}
 }
 
-int LaptopFactory::GetRandomTimeout() {
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::uniform_int_distribution<> dist(150, 300);
-	return dist(gen);
-}
-
 void LaptopFactory::
 LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerStub>& stub) {
 	
-	int valid_replicate, prev_last_idx, prev_commited_idx, current_term;
-	MapOp op;
+	int valid_replicate, current_term;
 	current_term = metadata->GetCurrentTerm();
-	op.arg1 = customer_id;
-	op.arg2 = order_num;
 	
 	// // CONSIDER: if it was a follower, should I execute the last?; no
 
@@ -365,5 +348,15 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 
 	// send replicate log message to all of the neighbor nodes
 	valid_replicate = metadata->ReplicateLog();
+	if (!valid_replicate) {
+		std::cout << "It was not a valid replicate!" << std::endl;
+	}
 	return;
+}
+
+int LaptopFactory::GetRandomTimeout() {
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<> dist(150, 300);
+	return dist(gen);
 }

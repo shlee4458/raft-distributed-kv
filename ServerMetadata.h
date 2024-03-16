@@ -36,14 +36,15 @@ private:
     std::set<int> vote_received;
     int* sent_length; // reserve sent_length[size] for itself
     int* ack_length; // reserve ack_length[size] for itself
-
     bool heartbeat;
 
+    std::map<int, int> server_index_map;
     std::vector<std::shared_ptr<ServerNode>> neighbors;
     std::deque<std::shared_ptr<ClientSocket>> neighbor_sockets; // socket to the backup nodes as a primary
     std::map<int, int> customer_record;
     std::vector<MapOp> smr_log;
-    std::map<std::shared_ptr<ClientSocket>, std::shared_ptr<ServerNode>> socket_node;
+    std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> node_socket;
+    
 
 public:
     ServerMetadata();
@@ -60,6 +61,7 @@ public:
     int GetLastTerm();
     bool GetVotedFor();
     bool GetHeartbeat();
+    int GetServerIndex(int id);
     std::shared_ptr<ServerNode> GetLeader();
     std::string GetLeaderIp();
     int GetLeaderPort();
@@ -69,6 +71,8 @@ public:
     std::deque<std::shared_ptr<ClientSocket>> GetNeighborSockets();
     int GetValue(int customer_id);
     ReplicationRequest GetReplicationRequest(MapOp op);
+    int GetNeighborSocketSize();
+    std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> GetNodeSocket();
 
     void SetFactoryId(int id);
     void SetLeaderId(int id);
@@ -78,6 +82,7 @@ public:
     int SetCommitLength();
     void SetAckLength(int node_idx, int size);
     void SetHeartbeat(bool heartbeat);
+    int SendRequestVote(std::shared_ptr<ClientSocket> socket);
 
     void AppendLog(int op_term, int customer_id, int order_num);
     void ExecuteLog(int idx);
@@ -85,7 +90,7 @@ public:
     bool IsLeader();
     bool WonElection();
 
-    void AddNeighbors(std::shared_ptr<ServerNode> node);
+    void AddNeighbors(std::shared_ptr<ServerNode> node, int idx);
     void InitNeighbors();
     void InitLeader();
 
