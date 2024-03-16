@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
 	int engineer_cnt = 0;
 
 	ServerSocket socket;
-	LaptopFactory factory;
+	
 	std::shared_ptr<ServerSocket> new_socket;
 	std::vector<std::thread> thread_vector;
 
@@ -49,18 +49,18 @@ int main(int argc, char *argv[]) {
 		node->ip = argv[i + 1];
 		node->port = atoi(argv[i + 2]);
 		std::cout << "Created peer node: " << j + 1 << std::endl;
-
 		metadata->AddNeighbors(std::move(node), j);
 	}
+	LaptopFactory factory(metadata);
 
 	// give 5 seconds to allow all servers to boot, and connect with the neighbors
-	// std::this_thread::sleep_for(std::chrono::seconds(5));
+	std::this_thread::sleep_for(std::chrono::seconds(5));
 	metadata->InitNeighbors(); 
 
 	// create the primary admin thread
-	std::thread pfa_thread(&LaptopFactory::LeaderThread, 
+	std::thread leader_thread(&LaptopFactory::LeaderThread, 
 			&factory, engineer_cnt++);
-	thread_vector.push_back(std::move(pfa_thread));
+	thread_vector.push_back(std::move(leader_thread));
 
 	// create the follower admin thread
 	std::thread follower_thread(&LaptopFactory::FollowerThread,
@@ -70,13 +70,13 @@ int main(int argc, char *argv[]) {
 	// create the candidate thread
 		// this will initialize
 	std::thread timeout_thread(&LaptopFactory::TimeoutThread,
-			&factory, metadata);
+			&factory);
 	thread_vector.push_back(std::move(timeout_thread));
 
 	// TODO: consider changing to have two different sockets for appendRPC & voteRPC
 		// use two separate threads to 
 	while ((new_socket = socket.Accept())) {
-		std::cout << "I have received the connection request from the primary" << std::endl;
+		std::cout << "I have received the connection request!" << std::endl;
 		std::thread engineer_thread(&LaptopFactory::EngineerThread, &factory, 
 				std::move(new_socket), engineer_cnt++);
 		thread_vector.push_back(std::move(engineer_thread));

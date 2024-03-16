@@ -163,6 +163,8 @@ public:
 	void Marshal(char *buffer);
 	void Unmarshal(char *buffer);
 
+	void Print();
+
 private:
 	int id, current_term, log_size, last_term;
 };
@@ -179,6 +181,8 @@ public:
 
 	void Marshal(char *buffer);
 	void Unmarshal(char *buffer);
+
+	void Print();
 
 private:
 	int id, current_term, voted;

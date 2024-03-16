@@ -519,6 +519,14 @@ void RequestVoteMessage::Unmarshal(char *buffer) {
     last_term = ntohl(net_last_term);
 }
 
+void RequestVoteMessage::Print() {
+	std::cout << "RequestVoteMessage:" << std::endl;
+    std::cout << "  Candidate ID: " << GetId() << std::endl;
+    std::cout << "  Current Term: " << GetCurrentTerm() << std::endl;
+    std::cout << "  Log Size: " << GetLogSize() << std::endl;
+    std::cout << "  Last Term: " << GetLastTerm() << std::endl;
+}
+
 /**
  * Request Vote Response
 */
@@ -577,6 +585,12 @@ void RequestVoteResponse::Unmarshal(char *buffer) {
     voted = ntohl(net_voted); 
 }
 
+void RequestVoteResponse::Print() {
+	std::cout << "RequestVoteResponseMessage:" << std::endl;
+    std::cout << "  Candidate ID: " << GetId() << std::endl;
+    std::cout << "  Current Term: " << GetCurrentTerm() << std::endl;
+    std::cout << "  Log Size: " << GetVoted() << std::endl;
+}
 
 /**
  * Log Request

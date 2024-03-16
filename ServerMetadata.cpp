@@ -24,7 +24,7 @@ ServerMetadata::ServerMetadata()
   log_size(0), 
   voted_for(-1), 
   heartbeat(false),
-  server_index_map(), 
+  server_index_map(),
   neighbors() { }
 
 int ServerMetadata::GetLeaderId() {
@@ -102,7 +102,6 @@ int ServerMetadata::GetVoteReceivedSize() {
 }
 
 int ServerMetadata::GetCurrentTerm() {
-    std::cout << "Trying to get the current term" << std::endl;
     return current_term;
 }
 
@@ -112,7 +111,8 @@ int ServerMetadata::GetLogSize() {
 
 int ServerMetadata::GetLastTerm() {
     int last_term = 0;
-    if (log_size) {
+    if (log_size != 0) {
+        std::cout << "CALLED!!!!!!" << std::endl;
         last_term = smr_log[log_size - 1].term;
     }
     return last_term;
@@ -222,7 +222,7 @@ int ServerMetadata::SendIdentifier(int identifier, std::shared_ptr<ClientSocket>
 }
 
 bool ServerMetadata::WonElection() {
-    return GetVoteReceivedSize() > GetPeerSize() * 2;
+    return GetVoteReceivedSize() * 2 >= GetPeerSize();
 }
 
 void ServerMetadata::InitLeader() {
@@ -251,16 +251,6 @@ void ServerMetadata::SetAckLength(int node_idx, int size) {
 /**
  * Request Vote RPC 
 */
-
-int ServerMetadata::SendRequestVote(std::shared_ptr<ClientSocket> socket) {
-    RequestVoteMessage msg;
-    char buffer[32];
-    int size = msg.Size();
-    int last_term = GetLastTerm();
-    msg.SetRequestVoteMessage(factory_id, current_term, log_size, last_term);
-    msg.Marshal(buffer);
-    return socket->Send(buffer, size, 0);
-}
 
 void ServerMetadata::RequestVote() {
     int voted, voter_term, voter_id;
@@ -295,8 +285,12 @@ void ServerMetadata::RequestVote() {
         voter_term = res.GetCurrentTerm();
         voter_id = res.GetId();
 
+        // res.Print();
+
         // check if the vote is valid, and update the voted
-        if (current_term == voter_term && voted) {
+        std::cout << "Collecting vote from: " << server_node->id << std::endl;
+        if ((current_term == voter_term) && voted) {
+            std::cout << "I have received the vote!" << std::endl;
             vote_received.insert(voter_id);
 
             // if the vote is majority
@@ -311,37 +305,58 @@ void ServerMetadata::RequestVote() {
             current_term = voter_term;
             status = FOLLOWER;
             voted_for = -1;
+            vote_received.clear();
             return;
         }
     }
     return; // split vote happened
 }
 
-RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
-    
-    int cand_id = msg.GetId();
-	int cand_current_term = msg.GetCurrentTerm();
-	int cand_log_size = msg.GetLogSize();
-	int cand_last_term = msg.GetLastTerm();
-	int last_term = GetLastTerm();
+    RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
+        
+        // SetCurrentTerm(1);
+        // SetStatus(FOLLOWER);
+        // SetVotedFor(0);
 
-	// if more higher term candidate vote is received
-	if (cand_current_term > current_term) {
-		SetCurrentTerm(cand_current_term);
-		SetStatus(FOLLOWER);
-		SetVotedFor(cand_id);
-	}
-	
-	bool valid = (cand_last_term > last_term) || 
-				((cand_last_term == last_term) && cand_log_size >= log_size);
+        // RequestVoteResponse res;
+        // res.SetRequestVoteResponse(factory_id, current_term, true);
+        // return res;
 
-	RequestVoteResponse res;
-	if (valid && cand_current_term == current_term && voted_for == cand_id) {
-		res.SetRequestVoteResponse(factory_id, current_term, true);
-	} else {
-		res.SetRequestVoteResponse(factory_id, current_term, false);
-	}
-    return res;
+        int cand_id = msg.GetId();
+        int cand_current_term = msg.GetCurrentTerm();
+        int cand_log_size = msg.GetLogSize();
+        int cand_last_term = msg.GetLastTerm();
+        int last_term = GetLastTerm();
+
+        // if more higher term candidate vote is received
+        if (cand_current_term > current_term) {
+            SetCurrentTerm(cand_current_term);
+            SetStatus(FOLLOWER);
+            SetVotedFor(cand_id);
+        }
+        
+        bool valid = (cand_last_term > last_term) || 
+                    ((cand_last_term == last_term) && cand_log_size >= log_size);
+
+        RequestVoteResponse res;
+        if (valid && cand_current_term == current_term && voted_for == cand_id) {
+            res.SetRequestVoteResponse(factory_id, current_term, true);
+        } else {
+            res.SetRequestVoteResponse(factory_id, current_term, false);
+        }
+
+        SetHeartbeat(true);
+        return res;
+    }
+
+int ServerMetadata::SendRequestVote(std::shared_ptr<ClientSocket> socket) {
+    RequestVoteMessage msg;
+    char buffer[32];
+    int size = msg.Size();
+    int last_term = GetLastTerm();
+    msg.SetRequestVoteMessage(factory_id, current_term, log_size, last_term);
+    msg.Marshal(buffer);
+    return socket->Send(buffer, size, 0);
 }
 
 RequestVoteResponse ServerMetadata::RecvVoteResponse(std::shared_ptr<ClientSocket> nei) {
@@ -378,42 +393,54 @@ int ServerMetadata::ReplicateLog() {
             prefix_term = smr_log[prefix_length - 1].term;
         }
 
-        // for all the unsent op, send to the followers
-        while (prefix_length < log_size) {
-            op_term = smr_log[prefix_length].term;
-            op_arg1 = smr_log[prefix_length].arg1;
-            op_arg2 = smr_log[prefix_length].arg2;
+        if (!log_size) { // send emtpy heartbeat
             log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
-                             commit_length, op_term, op_arg1, op_arg2);
+                            commit_length, -1, -1, -1);
             
             // send the log to the follower
-            std::cout << "trying to send log request!" << std::endl;
+            std::cout << "Sending a simple heartbeat to: " << it->second << std::endl;
             SendLogRequest(log_req, socket);
-            std::cout << "log request sent" << std::endl;
-            
-            // update the prefix_length logRequest accordingly with the response
-            log_res = RecvLogResponse(socket);
+        }
 
-            term = log_res.GetCurrentTerm();
-            ack = log_res.GetAck();
-            success = log_res.GetSuccess();
+        else { // for all the unsent op, send to the followers
+            while (prefix_length < log_size) {
+                op_term = smr_log[prefix_length].term;
+                op_arg1 = smr_log[prefix_length].arg1;
+                op_arg2 = smr_log[prefix_length].arg2;
+                log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
+                                commit_length, op_term, op_arg1, op_arg2);
+                
+                // send the log to the follower
+                std::cout << "trying to send log request!" << std::endl;
+                SendLogRequest(log_req, socket);
+                std::cout << "log request sent" << std::endl;
+                
+                // update the prefix_length logRequest accordingly with the response
+                log_res = RecvLogResponse(socket);
 
-            if (term == current_term && status == LEADER) {
-                if (success && ack > ack_length[i]) {
-                    sent_length[i] = ack;
-                    ack_length[i] = ack;
-                    CommitLog();
-                } else if (sent_length[i] > 0) { // send the previous log
-                    sent_length[i]--;
-                    prefix_length--;
+                term = log_res.GetCurrentTerm();
+                ack = log_res.GetAck();
+                success = log_res.GetSuccess();
+
+                if (term == current_term && status == LEADER) {
+                    if (success && ack > ack_length[i]) {
+                        sent_length[i] = ack;
+                        ack_length[i] = ack;
+                        CommitLog();
+                    } else if (sent_length[i] > 0) { // send the previous log
+                        sent_length[i]--;
+                        prefix_length--;
+                    }
+                } else if (term > current_term) { // demote to the follower
+                    current_term = term;
+                    status = FOLLOWER;
+                    voted_for = -1;
+                    vote_received.clear();
+                    return 0;
                 }
-            } else if (term > current_term) { // demote to the follower
-                current_term = term;
-                status = FOLLOWER;
-                voted_for = -1;
-                return 0;
             }
         }
+
     }
     return 1;
 }
@@ -457,7 +484,7 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
                 (req_prefix_length == 0 || GetTermAtIdx(req_prefix_length - 1) == req_prefix_term);
 
     if ((current_term == req_current_term) && can_log) {
-        if (!included) {
+        if (!included && req_op_term != -1) {
             // drop the uncommitted log
             if (log_size > req_prefix_length) {
                 DropUncommittedLog(log_size, req_prefix_length);

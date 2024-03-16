@@ -44,8 +44,6 @@ private:
 	std::shared_ptr<ServerMetadata> metadata;
 	std::vector<std::shared_ptr<ServerStub>> stubs;
 
-	bool heartbeat = false;
-
 	LaptopInfo GetLaptopInfo(CustomerRequest order, int engineer_id);
 	LaptopInfo CreateLaptop(CustomerRequest order, int engineer_id, std::shared_ptr<ServerStub> stub);
 	int ReadRecord(int customer_id);
@@ -61,10 +59,11 @@ private:
 	int GetRandomTimeout();
 
 public:
+	LaptopFactory(std::shared_ptr<ServerMetadata> metadata);
 	void EngineerThread(std::shared_ptr<ServerSocket> socket, 
 						int engieer_id);
 	void LeaderThread(int id);
-	void TimeoutThread(std::shared_ptr<ServerMetadata> metadata);
+	void TimeoutThread();
 	void FollowerThread();
 };
 
