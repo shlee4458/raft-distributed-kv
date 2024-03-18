@@ -92,6 +92,7 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 				if (DEBUG) {
 					std::cout << "CONNECTION WITH THE CLIENT HAS BEEN TERMINATED" << std::endl;
 				}
+				return;
 				break;
 			default:
 				break;
@@ -141,24 +142,32 @@ void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 
 int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
 
-	// get the LogRequest instance from the leader
 	LogRequest request;
-	while (true) {
-		request = stub->RecvLogRequest();
+	LogResponse log_res;
+	
+	request = stub->RecvLogRequest();
+	log_res = metadata->GetLogResponse(request);
+	stub->SendLogResponse(log_res);
+	return 1;
+
+	// // get the LogRequest instance from the leader
+	// LogRequest request;
+	// while (true) {
+	// 	request = stub->RecvLogRequest();
 		
-		// check if the log request received is valid, and get LogRequestResponse with the info
+	// 	// check if the log request received is valid, and get LogRequestResponse with the info
 
-		std::shared_ptr<FollowerRequest> follower_req = 
-			std::shared_ptr<FollowerRequest>(new FollowerRequest);
+	// 	std::shared_ptr<FollowerRequest> follower_req = 
+	// 		std::shared_ptr<FollowerRequest>(new FollowerRequest);
 
-		follower_req->log_request = request;
-		follower_req->stub = stub;
+	// 	follower_req->log_request = request;
+	// 	follower_req->stub = stub;
 
-		rep_lock.lock();
-		req.push(std::move(follower_req));
-		rep_cv.notify_one();
-		rep_lock.unlock();
-	}
+	// 	rep_lock.lock();
+	// 	req.push(std::move(follower_req));
+	// 	rep_cv.notify_one();
+	// 	rep_lock.unlock();
+	// }
 }
 
 void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub> stub) {

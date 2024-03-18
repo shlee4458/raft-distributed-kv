@@ -43,9 +43,31 @@ int ServerMetadata::GetPeerSize() {
     return neighbors.size();
 }
 
-
 std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> ServerMetadata::GetNodeSocket() {
     return node_socket;
+}
+
+std::shared_ptr<ServerNode> ServerMetadata::GetLeader() {
+    for (std::shared_ptr<ServerNode> nei: GetNeighbors()) {
+        if (nei->id == GetLeaderId()) {
+            return nei;
+        }
+    }
+    return nullptr;
+}
+
+std::string ServerMetadata::GetLeaderIp() {
+    std::shared_ptr<ServerNode> leader = GetLeader();
+    return leader->ip;
+}
+
+int ServerMetadata::GetLeaderPort() {
+    std::shared_ptr<ServerNode> leader = GetLeader();
+    return leader->port;
+}
+
+int ServerMetadata::GetServerIndex(int id) {
+    return server_index_map[id];
 }
 
 std::vector<MapOp> ServerMetadata::GetLog() {
@@ -74,25 +96,6 @@ int ServerMetadata::GetCommitLength() {
     return commit_length;
 }
 
-std::shared_ptr<ServerNode> ServerMetadata::GetLeader() {
-    for (std::shared_ptr<ServerNode> nei: GetNeighbors()) {
-        if (nei->id == GetLeaderId()) {
-            return nei;
-        }
-    }
-    return nullptr;
-}
-
-std::string ServerMetadata::GetLeaderIp() {
-    std::shared_ptr<ServerNode> leader = GetLeader();
-    return leader->ip;
-}
-
-int ServerMetadata::GetLeaderPort() {
-    std::shared_ptr<ServerNode> leader = GetLeader();
-    return leader->port;
-}
-
 int ServerMetadata::GetStatus() {
     return status;
 }
@@ -118,10 +121,6 @@ int ServerMetadata::GetLastTerm() {
     return last_term;
 }
 
-int ServerMetadata::GetServerIndex(int id) {
-    return server_index_map[id];
-}
-
 bool ServerMetadata::GetVotedFor() {
     return voted_for;
 }
@@ -130,13 +129,13 @@ bool ServerMetadata::GetHeartbeat() {
     return heartbeat;
 }
 
-void ServerMetadata::SetLeaderId(int id) {
-	leader_id = id;
+void ServerMetadata::SetFactoryId(int id) {
+    factory_id = id;
     return;
 }
 
-void ServerMetadata::SetFactoryId(int id) {
-    factory_id = id;
+void ServerMetadata::SetLeaderId(int id) {
+	leader_id = id;
     return;
 }
 
@@ -183,7 +182,7 @@ void ServerMetadata::ExecuteLog(int idx) {
     return;
 }
 
-bool ServerMetadata::IsLeader() {
+int ServerMetadata::IsLeader() {
     return leader_id == factory_id;
 }
 
@@ -233,7 +232,9 @@ void ServerMetadata::InitLeader() {
         sent_length[i] = log_size;
         ack_length[i] = 0;
     }
+    leader_id = factory_id;
     status = LEADER;
+    std::cout << "Set itself as the leader!" << std::endl;
     return;
 }
 
@@ -247,12 +248,18 @@ void ServerMetadata::SetAckLength(int node_idx, int size) {
     ack_length[node_idx] = size;
 }
 
-
 /**
  * Request Vote RPC 
 */
 
 void ServerMetadata::RequestVote() {
+
+    // if it does not have neighbor, set it as the leader.
+    if (neighbors.size() <= 2) {
+        InitLeader();
+        return;
+    }
+
     int voted, voter_term, voter_id;
     std::shared_ptr<ServerNode> server_node;
     std::shared_ptr<ClientSocket> socket;
@@ -312,42 +319,42 @@ void ServerMetadata::RequestVote() {
     return; // split vote happened
 }
 
-    RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
-        
-        // SetCurrentTerm(1);
-        // SetStatus(FOLLOWER);
-        // SetVotedFor(0);
+RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
+    
+    // SetCurrentTerm(1);
+    // SetStatus(FOLLOWER);
+    // SetVotedFor(0);
 
-        // RequestVoteResponse res;
-        // res.SetRequestVoteResponse(factory_id, current_term, true);
-        // return res;
+    // RequestVoteResponse res;
+    // res.SetRequestVoteResponse(factory_id, current_term, true);
+    // return res;
 
-        int cand_id = msg.GetId();
-        int cand_current_term = msg.GetCurrentTerm();
-        int cand_log_size = msg.GetLogSize();
-        int cand_last_term = msg.GetLastTerm();
-        int last_term = GetLastTerm();
+    int cand_id = msg.GetId();
+    int cand_current_term = msg.GetCurrentTerm();
+    int cand_log_size = msg.GetLogSize();
+    int cand_last_term = msg.GetLastTerm();
+    int last_term = GetLastTerm();
 
-        // if more higher term candidate vote is received
-        if (cand_current_term > current_term) {
-            SetCurrentTerm(cand_current_term);
-            SetStatus(FOLLOWER);
-            SetVotedFor(cand_id);
-        }
-        
-        bool valid = (cand_last_term > last_term) || 
-                    ((cand_last_term == last_term) && cand_log_size >= log_size);
-
-        RequestVoteResponse res;
-        if (valid && cand_current_term == current_term && voted_for == cand_id) {
-            res.SetRequestVoteResponse(factory_id, current_term, true);
-        } else {
-            res.SetRequestVoteResponse(factory_id, current_term, false);
-        }
-
-        SetHeartbeat(true);
-        return res;
+    // if more higher term candidate vote is received
+    if (cand_current_term > current_term) {
+        SetCurrentTerm(cand_current_term);
+        SetStatus(FOLLOWER);
+        SetVotedFor(cand_id);
     }
+    
+    bool valid = (cand_last_term > last_term) || 
+                ((cand_last_term == last_term) && cand_log_size >= log_size);
+
+    RequestVoteResponse res;
+    if (valid && cand_current_term == current_term && voted_for == cand_id) {
+        res.SetRequestVoteResponse(factory_id, current_term, true);
+    } else {
+        res.SetRequestVoteResponse(factory_id, current_term, false);
+    }
+
+    SetHeartbeat(true);
+    return res;
+}
 
 int ServerMetadata::SendRequestVote(std::shared_ptr<ClientSocket> socket) {
     RequestVoteMessage msg;
@@ -398,7 +405,8 @@ int ServerMetadata::ReplicateLog() {
                             commit_length, -1, -1, -1);
             
             // send the log to the follower
-            std::cout << "Sending a simple heartbeat to: " << it->second << std::endl;
+            std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
+            SendIdentifier(APPENDLOG_RPC, socket);
             SendLogRequest(log_req, socket);
         }
 
@@ -412,6 +420,7 @@ int ServerMetadata::ReplicateLog() {
                 
                 // send the log to the follower
                 std::cout << "trying to send log request!" << std::endl;
+                SendIdentifier(APPENDLOG_RPC, socket);
                 SendLogRequest(log_req, socket);
                 std::cout << "log request sent" << std::endl;
                 
@@ -504,6 +513,7 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
         log_res.SetLogResponse(factory_id, current_term, 0, 0); // set no response
     }
 
+    SetHeartbeat(true);
     return log_res;
 }
 
@@ -538,7 +548,6 @@ void ServerMetadata::CommitLog() {
 }
 
 int ServerMetadata::SendLogRequest(LogRequest log_req, std::shared_ptr<ClientSocket> socket) {
-    SendIdentifier(APPENDLOG_RPC, socket);
 	char buffer[64];
     int size;
     log_req.Marshal(buffer);

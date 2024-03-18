@@ -87,7 +87,7 @@ public:
     void AppendLog(int op_term, int customer_id, int order_num);
     void ExecuteLog(int idx);
 
-    bool IsLeader();
+    int IsLeader();
     bool WonElection();
 
     void AddNeighbors(std::shared_ptr<ServerNode> node, int idx);

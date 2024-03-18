@@ -14,7 +14,6 @@ int main(int argc, char *argv[]) {
 	int engineer_cnt = 0;
 
 	ServerSocket socket;
-	
 	std::shared_ptr<ServerSocket> new_socket;
 	std::vector<std::thread> thread_vector;
 
@@ -39,23 +38,23 @@ int main(int argc, char *argv[]) {
 		return 0;
 	}
 
-	// update the server metadata
+	// update the server metadatas
 	auto metadata = std::make_shared<ServerMetadata>();
 	metadata->SetFactoryId(unique_id);
 	for (int i = 4, j = 0; j < num_peers; i += 3, j++) {
 		// create a node and add the node as the neighbor of the current server
-		std::shared_ptr<ServerNode> node = std::shared_ptr<ServerNode>(new ServerNode());
+		auto node = std::make_shared<ServerNode>();
 		node->id = atoi(argv[i]);
 		node->ip = argv[i + 1];
 		node->port = atoi(argv[i + 2]);
 		std::cout << "Created peer node: " << j + 1 << std::endl;
 		metadata->AddNeighbors(std::move(node), j);
 	}
-	LaptopFactory factory(metadata);
+	metadata->InitNeighbors(); 
+	LaptopFactory factory(std::move(metadata));
 
 	// give 5 seconds to allow all servers to boot, and connect with the neighbors
-	std::this_thread::sleep_for(std::chrono::seconds(5));
-	metadata->InitNeighbors(); 
+	std::this_thread::sleep_for(std::chrono::seconds(3));
 
 	// create the primary admin thread
 	std::thread leader_thread(&LaptopFactory::LeaderThread, 
@@ -81,5 +80,6 @@ int main(int argc, char *argv[]) {
 				std::move(new_socket), engineer_cnt++);
 		thread_vector.push_back(std::move(engineer_thread));
 	}
+	
 	return 0;
 }

@@ -589,7 +589,7 @@ void RequestVoteResponse::Print() {
 	std::cout << "RequestVoteResponseMessage:" << std::endl;
     std::cout << "  Candidate ID: " << GetId() << std::endl;
     std::cout << "  Current Term: " << GetCurrentTerm() << std::endl;
-    std::cout << "  Log Size: " << GetVoted() << std::endl;
+    std::cout << "  Voted: " << GetVoted() << std::endl;
 }
 
 /**

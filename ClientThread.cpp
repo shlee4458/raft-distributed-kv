@@ -5,9 +5,12 @@
 #define UPDATE_REQUEST 1
 #define READ_REQUEST 2
 #define DEBUG 3
+
 #define CLIENT_IDENTIFIER 2
+
 #define LAPTOP_DEFAULT -1
 #define RECORD_DEFAULT -2
+
 #define FOLLOWER 1
 #define LEADER 2
 
@@ -19,6 +22,7 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 	LaptopInfo laptop;
 	CustomerRecord record;
 	Identifier identifier;
+	LeaderInfo info;
 	int is_leader;
 	int exit_requested = false;
 
@@ -35,10 +39,11 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 	identifier.SetIdentifier(CLIENT_IDENTIFIER);
 	stub.SendIdentifier(identifier);
 	is_leader = stub.RecvIsLeader();
+	std::cout << is_leader << std::endl;
 
-	// if the request type is update and the is not leader
+	// if the request type is update and is not leader, reopen the socket with the leader
 	if (is_leader == FOLLOWER && request_type == UPDATE_REQUEST) {
-		LeaderInfo info;
+		std::cout << "It is not the leader!" << std::endl;
 		info = stub.RecvLeaderInfo();
 		ip = info.GetIp();
 		port = info.GetPort();
@@ -50,6 +55,7 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 		
 	} else if (is_leader == 0) {
 		std::cout << "identifier not sent" << std::endl;
+		return;
 	}
 
 	for (int i = 0; i < num_requests; i++) {
@@ -57,9 +63,10 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 		// based on the request_type, call different RPC
 		switch (request_type) {
 			case UPDATE_REQUEST:
-
+				std::cout << "Sending Update Request" << std::endl;
 				request.SetRequest(customer_id, i, UPDATE_REQUEST);
 				laptop = stub.Order(request);
+				laptop.Print();
 
 				// Primary server failure; exit gracefully
 				if (laptop.GetCustomerId() == LAPTOP_DEFAULT) {
