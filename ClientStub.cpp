@@ -43,7 +43,6 @@ int ClientStub::SendIdentifier(Identifier identifier) {
 	return socket.Send(buffer, identifier.Size(), 0);
 }
 
-
 int ClientStub::RecvIsLeader() {
 	char leader_buffer[4];
 	Identifier is_leader;

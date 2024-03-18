@@ -794,3 +794,11 @@ void LogResponse::Unmarshal(char *buffer) {
 	ack = ntohl(net_ack);
 	success = ntohl(net_success);
 }
+
+void LogResponse::Print() {
+	std::cout << "Log Response:" << std::endl;
+    std::cout << "  Follower Id: " << GetFollowerId() << std::endl;
+    std::cout << "  Current Term: " << GetCurrentTerm() << std::endl;
+    std::cout << "  Ack: " << GetAck() << std::endl;
+    std::cout << "  Success: " << GetSuccess() << std::endl;
+}

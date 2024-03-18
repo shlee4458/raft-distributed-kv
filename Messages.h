@@ -241,6 +241,9 @@ public:
 	void Marshal(char *buffer);
 	void Unmarshal(char *buffer);
 	friend std::ostream& operator<<(std::ostream& os, const LogRequest& req);
+
+	void Print();
+	
 private:
 	int follower_id;
 	int current_term;

@@ -115,7 +115,6 @@ int ServerMetadata::GetLogSize() {
 int ServerMetadata::GetLastTerm() {
     int last_term = 0;
     if (log_size != 0) {
-        std::cout << "CALLED!!!!!!" << std::endl;
         last_term = smr_log[log_size - 1].term;
     }
     return last_term;
@@ -153,33 +152,6 @@ void ServerMetadata::SetStatus(int status) {
 
 void ServerMetadata::SetHeartbeat(bool heartbeat) {
     this->heartbeat = heartbeat;
-}
-
-void ServerMetadata::AppendLog(int op_term, int customer_id, int order_num) {
-    MapOp op;
-    op.term = op_term;
-    op.arg1 = customer_id;
-    op.arg2 = order_num;
-
-    smr_log.push_back(op);
-    log_size++;
-    return;
-}
-
-void ServerMetadata::ExecuteLog(int idx) {
-    int customer_id, order_num;
-    
-    MapOp op = GetOp(idx);
-    customer_id = op.arg1;
-    order_num = op.arg2;
-
-    customer_record[customer_id] = order_num;
-    if (DEBUG) {
-        std::cout << "Record Updated for client: " << customer_id 
-            << " Order Num: " << order_num << std::endl;
-    } 
-    commit_length++;
-    return;
 }
 
 int ServerMetadata::IsLeader() {
@@ -255,7 +227,7 @@ void ServerMetadata::SetAckLength(int node_idx, int size) {
 void ServerMetadata::RequestVote() {
 
     // if it does not have neighbor, set it as the leader.
-    if (neighbors.size() <= 2) {
+    if (neighbors.size() < 2) {
         InitLeader();
         return;
     }
@@ -292,7 +264,7 @@ void ServerMetadata::RequestVote() {
         voter_term = res.GetCurrentTerm();
         voter_id = res.GetId();
 
-        // res.Print();
+        res.Print();
 
         // check if the vote is valid, and update the voted
         std::cout << "Collecting vote from: " << server_node->id << std::endl;
@@ -335,6 +307,9 @@ RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
     int cand_last_term = msg.GetLastTerm();
     int last_term = GetLastTerm();
 
+    std::cout << "This is the vote request that I have received!" << std::endl;
+    msg.Print();
+
     // if more higher term candidate vote is received
     if (cand_current_term > current_term) {
         SetCurrentTerm(cand_current_term);
@@ -363,6 +338,7 @@ int ServerMetadata::SendRequestVote(std::shared_ptr<ClientSocket> socket) {
     int last_term = GetLastTerm();
     msg.SetRequestVoteMessage(factory_id, current_term, log_size, last_term);
     msg.Marshal(buffer);
+    msg.Print();
     return socket->Send(buffer, size, 0);
 }
 
@@ -389,6 +365,7 @@ int ServerMetadata::ReplicateLog() {
     LogResponse log_res;
 
     int term, ack, success;
+    int iteration = 0;
 
     for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
         i = server_index_map[it->first->id];
@@ -400,7 +377,7 @@ int ServerMetadata::ReplicateLog() {
             prefix_term = smr_log[prefix_length - 1].term;
         }
 
-        if (!log_size) { // send emtpy heartbeat
+        if (log_size == prefix_length) { // send emtpy heartbeat
             log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
                             commit_length, -1, -1, -1);
             
@@ -419,22 +396,27 @@ int ServerMetadata::ReplicateLog() {
                                 commit_length, op_term, op_arg1, op_arg2);
                 
                 // send the log to the follower
-                std::cout << "trying to send log request!" << std::endl;
                 SendIdentifier(APPENDLOG_RPC, socket);
                 SendLogRequest(log_req, socket);
-                std::cout << "log request sent" << std::endl;
-                
+
                 // update the prefix_length logRequest accordingly with the response
                 log_res = RecvLogResponse(socket);
+                std::cout << "(" << iteration++ << " iteration) log request sent to: " << it->first->id 
+                          << ", prefix_length: " << prefix_length << std::endl;
+                std::cout << "ACK: " << log_res.GetAck() << std::endl;
+                std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
 
                 term = log_res.GetCurrentTerm();
                 ack = log_res.GetAck();
                 success = log_res.GetSuccess();
 
                 if (term == current_term && status == LEADER) {
-                    if (success && ack > ack_length[i]) {
+                    std::cout << "1st condition called!" << std::endl;
+                    if (success && ack >= ack_length[i]) {
+                        std::cout << "2nd condition called!" << std::endl;
                         sent_length[i] = ack;
                         ack_length[i] = ack;
+                        prefix_length++;
                         CommitLog();
                     } else if (sent_length[i] > 0) { // send the previous log
                         sent_length[i]--;
@@ -448,6 +430,7 @@ int ServerMetadata::ReplicateLog() {
                     return 0;
                 }
             }
+            iteration = 0;
         }
 
     }
@@ -492,7 +475,7 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
     can_log = (log_size >= req_prefix_length) && 
                 (req_prefix_length == 0 || GetTermAtIdx(req_prefix_length - 1) == req_prefix_term);
 
-    if ((current_term == req_current_term) && can_log) {
+    if ((current_term == req_current_term) && can_log && req_op_term != -1) {
         if (!included && req_op_term != -1) {
             // drop the uncommitted log
             if (log_size > req_prefix_length) {
@@ -507,7 +490,7 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
                 ExecuteLog(req_prefix_length);
             }
         }
-        log_res.SetLogResponse(factory_id, current_term, commit_length, 1); // set yes reponse
+        log_res.SetLogResponse(factory_id, current_term, req_prefix_length + 1, 1); // set yes reponse
 
     } else {
         log_res.SetLogResponse(factory_id, current_term, 0, 0); // set no response
@@ -517,6 +500,32 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
     return log_res;
 }
 
+void ServerMetadata::AppendLog(int op_term, int customer_id, int order_num) {
+    MapOp op;
+    op.term = op_term;
+    op.arg1 = customer_id;
+    op.arg2 = order_num;
+
+    smr_log.push_back(op);
+    log_size++;
+    return;
+}
+
+void ServerMetadata::ExecuteLog(int idx) {
+    int customer_id, order_num;
+    
+    MapOp op = GetOp(idx);
+    customer_id = op.arg1;
+    order_num = op.arg2;
+
+    customer_record[customer_id] = order_num;
+    if (DEBUG) {
+        std::cout << "Record Updated for client: " << customer_id 
+            << " Order Num: " << order_num << std::endl;
+    } 
+    commit_length++;
+    return;
+}
 
 void ServerMetadata::CommitLog() {
     // from the commit_length to log_size, find the maximum index that has majority of the vote received

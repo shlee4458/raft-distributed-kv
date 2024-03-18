@@ -50,12 +50,12 @@ int main(int argc, char *argv[]) {
 		std::cout << "Created peer node: " << j + 1 << std::endl;
 		metadata->AddNeighbors(std::move(node), j);
 	}
-	metadata->InitNeighbors(); 
-	LaptopFactory factory(std::move(metadata));
-
 	// give 5 seconds to allow all servers to boot, and connect with the neighbors
 	std::this_thread::sleep_for(std::chrono::seconds(3));
 
+	metadata->InitNeighbors(); 
+	LaptopFactory factory(std::move(metadata));
+	
 	// create the primary admin thread
 	std::thread leader_thread(&LaptopFactory::LeaderThread, 
 			&factory, engineer_cnt++);

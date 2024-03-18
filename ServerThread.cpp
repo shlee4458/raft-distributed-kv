@@ -66,7 +66,6 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 				int engieer_id) {
 	
 	int sender;
-	// this->metadata = metadata;
 	auto stub = std::make_shared<ServerStub>(); // stub is only destroyed when the factory goes out of scope
 	stub->Init(std::move(socket));
 	sender = stub->IdentifySender();
