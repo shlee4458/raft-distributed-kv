@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
 	metadata->InitNeighbors(); 
 	LaptopFactory factory(std::move(metadata));
 	
-	// create the primary admin thread
+	// create the leader thread
 	std::thread leader_thread(&LaptopFactory::LeaderThread, 
 			&factory, engineer_cnt++);
 	thread_vector.push_back(std::move(leader_thread));

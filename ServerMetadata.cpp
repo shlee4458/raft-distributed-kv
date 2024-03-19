@@ -246,7 +246,7 @@ void ServerMetadata::RequestVote() {
 
     // request vote to all the neighbors
     for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
-        std::cout << "Sending vote request to servers" << std::endl;
+        // std::cout << "Sending vote request to servers" << std::endl;
 
         // TODO: consider having thread pool of size peersize - 1 collect votes
         // send the identifier that it is request vote rpc
@@ -264,17 +264,17 @@ void ServerMetadata::RequestVote() {
         voter_term = res.GetCurrentTerm();
         voter_id = res.GetId();
 
-        res.Print();
+        // res.Print();
 
         // check if the vote is valid, and update the voted
-        std::cout << "Collecting vote from: " << server_node->id << std::endl;
+        // std::cout << "Collecting vote from: " << server_node->id << std::endl;
         if ((current_term == voter_term) && voted) {
-            std::cout << "I have received the vote!" << std::endl;
+            // std::cout << "I have received the vote!" << std::endl;
             vote_received.insert(voter_id);
 
             // if the vote is majority
             if (WonElection()) {
-                std::cout << "Won the election!" << std::endl;
+                // std::cout << "Won the election!" << std::endl;
                 InitLeader();
                 return;
             }
@@ -293,22 +293,14 @@ void ServerMetadata::RequestVote() {
 
 RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
     
-    // SetCurrentTerm(1);
-    // SetStatus(FOLLOWER);
-    // SetVotedFor(0);
-
-    // RequestVoteResponse res;
-    // res.SetRequestVoteResponse(factory_id, current_term, true);
-    // return res;
-
     int cand_id = msg.GetId();
     int cand_current_term = msg.GetCurrentTerm();
     int cand_log_size = msg.GetLogSize();
     int cand_last_term = msg.GetLastTerm();
     int last_term = GetLastTerm();
 
-    std::cout << "This is the vote request that I have received!" << std::endl;
-    msg.Print();
+    // std::cout << "This is the vote request that I have received!" << std::endl;
+    // msg.Print();
 
     // if more higher term candidate vote is received
     if (cand_current_term > current_term) {
@@ -328,6 +320,7 @@ RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
     }
 
     SetHeartbeat(true);
+    // std::cout << "#### Heartbeat was set to true!! ####" << std::endl;
     return res;
 }
 
@@ -338,7 +331,7 @@ int ServerMetadata::SendRequestVote(std::shared_ptr<ClientSocket> socket) {
     int last_term = GetLastTerm();
     msg.SetRequestVoteMessage(factory_id, current_term, log_size, last_term);
     msg.Marshal(buffer);
-    msg.Print();
+    // msg.Print();
     return socket->Send(buffer, size, 0);
 }
 
@@ -355,7 +348,7 @@ RequestVoteResponse ServerMetadata::RecvVoteResponse(std::shared_ptr<ClientSocke
  * Replicate Log RPC
 */
 
-int ServerMetadata::ReplicateLog() {
+int ServerMetadata::ReplicateLog(bool is_heartbeat) {
 
     // for each of the neighbors
         // get the length of the item sent to the neighbor
@@ -382,9 +375,10 @@ int ServerMetadata::ReplicateLog() {
                             commit_length, -1, -1, -1);
             
             // send the log to the follower
-            std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
+            // std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
             SendIdentifier(APPENDLOG_RPC, socket);
             SendLogRequest(log_req, socket);
+            log_res = RecvLogResponse(socket);
         }
 
         else { // for all the unsent op, send to the followers
@@ -394,6 +388,8 @@ int ServerMetadata::ReplicateLog() {
                 op_arg2 = smr_log[prefix_length].arg2;
                 log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
                                 commit_length, op_term, op_arg1, op_arg2);
+
+                std::cout << log_req << std::endl;
                 
                 // send the log to the follower
                 SendIdentifier(APPENDLOG_RPC, socket);
@@ -401,19 +397,19 @@ int ServerMetadata::ReplicateLog() {
 
                 // update the prefix_length logRequest accordingly with the response
                 log_res = RecvLogResponse(socket);
-                std::cout << "(" << iteration++ << " iteration) log request sent to: " << it->first->id 
-                          << ", prefix_length: " << prefix_length << std::endl;
-                std::cout << "ACK: " << log_res.GetAck() << std::endl;
-                std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
+                // std::cout << "(" << iteration++ << " iteration) log request sent to: " << it->first->id 
+                //           << ", prefix_length: " << prefix_length << std::endl;
+                // std::cout << "ACK: " << log_res.GetAck() << std::endl;
+                // std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
 
                 term = log_res.GetCurrentTerm();
                 ack = log_res.GetAck();
                 success = log_res.GetSuccess();
 
                 if (term == current_term && status == LEADER) {
-                    std::cout << "1st condition called!" << std::endl;
+                    // std::cout << "1st condition called!" << std::endl;
                     if (success && ack >= ack_length[i]) {
-                        std::cout << "2nd condition called!" << std::endl;
+                        // std::cout << "2nd condition called!" << std::endl;
                         sent_length[i] = ack;
                         ack_length[i] = ack;
                         prefix_length++;
@@ -454,9 +450,7 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
     req_op_arg1 = log_req.GetOpArg1();
     req_op_arg2 = log_req.GetOpArg2();
 
-    if (DEBUG) {
-        std::cout << log_req << std::endl;
-    }
+    // std::cout << log_req << std::endl;
 
     // compare the req_term with the server term
     if (req_current_term > current_term) {
@@ -484,6 +478,7 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
 
             // append the log
             AppendLog(req_op_term, req_op_arg1, req_op_arg2);
+            // std::cout << "Appended Log!" << std::endl;
 
             // commit the appended log
             if (req_commit_length > commit_length) {
@@ -496,6 +491,7 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
         log_res.SetLogResponse(factory_id, current_term, 0, 0); // set no response
     }
 
+    // log_res.Print();
     SetHeartbeat(true);
     return log_res;
 }
@@ -519,10 +515,8 @@ void ServerMetadata::ExecuteLog(int idx) {
     order_num = op.arg2;
 
     customer_record[customer_id] = order_num;
-    if (DEBUG) {
-        std::cout << "Record Updated for client: " << customer_id 
-            << " Order Num: " << order_num << std::endl;
-    } 
+    std::cout << "Record Updated for client: " << customer_id 
+        << " Order Num: " << order_num << std::endl;
     commit_length++;
     return;
 }
@@ -530,7 +524,7 @@ void ServerMetadata::ExecuteLog(int idx) {
 void ServerMetadata::CommitLog() {
     // from the commit_length to log_size, find the maximum index that has majority of the vote received
     int commit_until, count;
-    for (int i = commit_length; i < GetLogSize(); i++) {
+    for (int i = commit_length; i < log_size; i++) {
         count = 0;
         for (int j = 0; j < GetPeerSize(); j++) {
             if (ack_length[j] >= i) {
@@ -548,7 +542,7 @@ void ServerMetadata::CommitLog() {
     }
 
     // if there exists log to commit
-    for (int i = commit_length; i < commit_until; i++) {
+    for (int i = commit_length; i < commit_until + 1; i++) {
         ExecuteLog(i);
     }
 
@@ -558,9 +552,8 @@ void ServerMetadata::CommitLog() {
 
 int ServerMetadata::SendLogRequest(LogRequest log_req, std::shared_ptr<ClientSocket> socket) {
 	char buffer[64];
-    int size;
+    int size = log_req.Size();
     log_req.Marshal(buffer);
-    size = log_req.Size();
     return socket->Send(buffer, size, 0);
 }
 

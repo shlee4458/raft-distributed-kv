@@ -79,7 +79,7 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 		switch (sender) {
 			case SERVER_IDENTIFIER:
 				if (DEBUG) {
-					std::cout << "Received a message from another server!!" << std::endl;
+					// std::cout << "Received a message from another server!!" << std::endl;
 				}
 				ServerHandler(std::move(stub));
 				break;
@@ -115,7 +115,7 @@ void LaptopFactory::ServerHandler(std::shared_ptr<ServerStub> stub) {
 				break;
 			
 			case APPENDLOG_RPC:
-				std::cout << "Append log RPC Received!" << std::endl;
+				// std::cout << "Append log RPC Received!" << std::endl;
 				ml.lock();
 				AppendLogHandler(stub);
 				ml.unlock();
@@ -129,9 +129,9 @@ void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 	// receive the request vote message
 	RequestVoteMessage msg;
 	msg = stub->RecvRequestVote();
+	// msg.Print();
 
 	// get the vote response to send
-	msg.Print();
 	RequestVoteResponse res = metadata->GetVoteResponse(msg);
 
 	// send vote response
@@ -285,7 +285,7 @@ void LaptopFactory::FollowerThread() {
 		stub->SendLogResponse(log_res);
 
 		if (DEBUG) {
-			std::cout << "I have responded to the primary!" << std::endl;
+			std::cout << "I sent log response to the leader!" << std::endl;
 		}
 	}
 }
@@ -303,7 +303,7 @@ void LaptopFactory::TimeoutThread() {
 		switch (metadata->GetStatus())
 			{
 				case FOLLOWER:
-					std::cout << "Current term: " << current_term << " - " << "Follower" << std::endl;
+					// std::cout << "Current term: " << current_term << " - " << "Follower" << std::endl;
 					tl.lock();
 					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat(); });
 					tl.unlock();
@@ -311,7 +311,7 @@ void LaptopFactory::TimeoutThread() {
 					ml.lock();
 					heartbeat = metadata->GetHeartbeat();
 					if (heartbeat) {
-						std::cout << "Heartbeat was received!" << std::endl;
+						// std::cout << "Heartbeat was received!" << std::endl;
 						metadata->SetHeartbeat(false);
 					} else {
 						std::cout << "I became a candidate!" << std::endl;
@@ -333,9 +333,9 @@ void LaptopFactory::TimeoutThread() {
 					break;
 				case LEADER:
 					// for every 100ms send replicatelog
-					std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
+					// std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
 					ml.lock();
-					metadata->ReplicateLog();
+					metadata->ReplicateLog(true);
 					ml.unlock();
 					tl.lock();
 					timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
@@ -377,7 +377,7 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 	metadata->SetAckLength(-1, metadata->GetLogSize());
 
 	// send replicate log message to all of the neighbor nodes
-	valid_replicate = metadata->ReplicateLog();
+	valid_replicate = metadata->ReplicateLog(false);
 	if (!valid_replicate) {
 		std::cout << "It was not a valid replicate!" << std::endl;
 	}
