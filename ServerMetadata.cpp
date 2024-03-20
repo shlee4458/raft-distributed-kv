@@ -450,8 +450,6 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
     req_op_arg1 = log_req.GetOpArg1();
     req_op_arg2 = log_req.GetOpArg2();
 
-    // std::cout << log_req << std::endl;
-
     // compare the req_term with the server term
     if (req_current_term > current_term) {
         SetCurrentTerm(req_current_term);
@@ -469,20 +467,28 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
     can_log = (log_size >= req_prefix_length) && 
                 (req_prefix_length == 0 || GetTermAtIdx(req_prefix_length - 1) == req_prefix_term);
 
-    if ((current_term == req_current_term) && can_log && req_op_term != -1) {
-        if (!included && req_op_term != -1) {
+    if ((current_term == req_current_term) && can_log) {
+        if (!included) {
             // drop the uncommitted log
             if (log_size > req_prefix_length) {
                 DropUncommittedLog(log_size, req_prefix_length);
             }
 
             // append the log
-            AppendLog(req_op_term, req_op_arg1, req_op_arg2);
-            // std::cout << "Appended Log!" << std::endl;
+            if (req_op_term != -1) { // if it is not the heartbeat message
+                AppendLog(req_op_term, req_op_arg1, req_op_arg2);
+            }
 
             // commit the appended log
             if (req_commit_length > commit_length) {
-                ExecuteLog(req_prefix_length);
+
+                // commit a single log at the current prefix length + 1
+                ExecuteLog(commit_length);
+
+                // execute all the logs until req_commit_length
+                // for (int i = commit_length; i < req_commit_length; i++) {
+                //     ExecuteLog(i); 
+                // }
             }
         }
         log_res.SetLogResponse(factory_id, current_term, req_prefix_length + 1, 1); // set yes reponse
@@ -501,6 +507,7 @@ void ServerMetadata::AppendLog(int op_term, int customer_id, int order_num) {
     op.term = op_term;
     op.arg1 = customer_id;
     op.arg2 = order_num;
+    std::cout << "Appended Log: " << op.term << ", " << op.arg1 << ", " << op.arg2 << std::endl;
 
     smr_log.push_back(op);
     log_size++;
@@ -510,7 +517,7 @@ void ServerMetadata::AppendLog(int op_term, int customer_id, int order_num) {
 void ServerMetadata::ExecuteLog(int idx) {
     int customer_id, order_num;
     
-    MapOp op = GetOp(idx);
+    MapOp op = GetOp(idx); // check the index of the op
     customer_id = op.arg1;
     order_num = op.arg2;
 
@@ -526,12 +533,12 @@ void ServerMetadata::CommitLog() {
     int commit_until, count;
     for (int i = commit_length; i < log_size; i++) {
         count = 0;
-        for (int j = 0; j < GetPeerSize(); j++) {
+        for (int j = 0; j < GetPeerSize() + 1; j++) {
             if (ack_length[j] >= i) {
                 count++;
             }
         }
-        if (count * 2 > GetPeerSize()) { // ack by the majority, commit
+        if (count * 2 > GetPeerSize() + 1) { // ack by the majority, commit
             commit_until = i;
         }
     }

@@ -68,7 +68,7 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 	int sender;
 	auto stub = std::make_shared<ServerStub>(); // stub is only destroyed when the factory goes out of scope
 	stub->Init(std::move(socket));
-	sender = stub->IdentifySender();
+	sender = stub->IdentifySender(); // A
 
 	{
 		std::unique_lock<std::mutex> sl(stub_lock);
@@ -148,25 +148,6 @@ int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
 	log_res = metadata->GetLogResponse(request);
 	stub->SendLogResponse(log_res);
 	return 1;
-
-	// // get the LogRequest instance from the leader
-	// LogRequest request;
-	// while (true) {
-	// 	request = stub->RecvLogRequest();
-		
-	// 	// check if the log request received is valid, and get LogRequestResponse with the info
-
-	// 	std::shared_ptr<FollowerRequest> follower_req = 
-	// 		std::shared_ptr<FollowerRequest>(new FollowerRequest);
-
-	// 	follower_req->log_request = request;
-	// 	follower_req->stub = stub;
-
-	// 	rep_lock.lock();
-	// 	req.push(std::move(follower_req));
-	// 	rep_cv.notify_one();
-	// 	rep_lock.unlock();
-	// }
 }
 
 void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub> stub) {
@@ -178,7 +159,7 @@ void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub>
 	int request_type, customer_id, order_num;
 
 	// let the customer know if leader or not
-	stub->SendIsLeader(metadata->IsLeader());
+	stub->SendIsLeader(metadata->IsLeader()); // B
 
 	if (!metadata->IsLeader()) {
 		// tell the client that the order to be sent to this
@@ -343,22 +324,6 @@ void LaptopFactory::TimeoutThread() {
 					tl.unlock();
 					break;
 			}
-			
-			// follower; give random 150~300ms timeout
-				// if LogRequest was received, reset the timer
-
-			// candidate; give random 150~300ms timeout
-				// if LogRequest was received and it is valid
-				// change the current state to the follower
-
-				// if timeout without change of state
-				// send RequestVoteRPC
-
-			// leader; send heartbeat to all the followers
-				// if LogRequest was received and it is valid
-				// change the current state to the follower
-
-				// Send heartbeat in every 100ms
 	}
 }
 
@@ -368,8 +333,6 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 	int valid_replicate, current_term;
 	current_term = metadata->GetCurrentTerm();
 	
-	// // CONSIDER: if it was a follower, should I execute the last?; no
-
 	// append the record(message, current term) to the log
 	metadata->AppendLog(current_term, customer_id, order_num);
 
@@ -387,7 +350,6 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 int LaptopFactory::GetRandomTimeout() {
 	std::random_device rd;
 	std::mt19937 gen(rd());
-	// std::uniform_int_distribution<> dist(1500, 1501);
 	std::uniform_int_distribution<> dist(150, 300);
 	return dist(gen);
 }

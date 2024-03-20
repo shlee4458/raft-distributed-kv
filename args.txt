@@ -17,6 +17,7 @@ ssh qsaasp@linux-075.khoury.northeastern.edu                    10.200.125.75
 # client
 ./client 10.200.125.71 12345 4 40000 1
 ./client 10.200.125.71 12345 1 1 1
+./client 10.200.125.72 12345 1 1 1
 
 ./client 10.200.125.73 12345 1 10 1
 

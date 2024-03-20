@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
 		metadata->AddNeighbors(std::move(node), j);
 	}
 	// give 5 seconds to allow all servers to boot, and connect with the neighbors
-	std::this_thread::sleep_for(std::chrono::seconds(3));
+	std::this_thread::sleep_for(std::chrono::seconds(5));
 
 	metadata->InitNeighbors(); 
 	LaptopFactory factory(std::move(metadata));
