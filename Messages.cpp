@@ -718,7 +718,9 @@ std::ostream& operator<<(std::ostream& os, const LogRequest& req) {
 		<< "Current Term: " << req.current_term << ", "
 		<< "Prefix Length: " << req.prefix_length << ", "
 		<< "Commit Length: " << req.commit_length << ", "
-		<< "Operation Term: " << req.op_term << std::endl;
+		<< "Operation Term: " << req.op_term  << ", "
+		<< "Commit Length: " << req.op_arg1 << ", "
+		<< "Commit Length: " << req.op_arg2 << std::endl;
 	return os;
 }
 

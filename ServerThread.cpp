@@ -311,6 +311,9 @@ void LaptopFactory::TimeoutThread() {
 											[&]{ return metadata->GetStatus() == LEADER // elected as the leader
 													 || metadata->GetStatus() == FOLLOWER; }); // found leader
 					tl.unlock();
+					if (metadata->GetStatus() == FOLLOWER) {
+						std::cout << "I became a follower!" << std::endl;
+					}
 					break;
 				case LEADER:
 					// for every 100ms send replicatelog

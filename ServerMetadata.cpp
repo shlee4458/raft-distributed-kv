@@ -167,6 +167,7 @@ void ServerMetadata::InitNeighbors() {
 
     // corner case: primary -> idle -> primary; empty the sockets and failed
     node_socket.clear();
+    failed_neighbors.clear();
 
 	std::string ip;
 	int port;
@@ -226,11 +227,12 @@ void ServerMetadata::SetAckLength(int node_idx, int size) {
 
 void ServerMetadata::RequestVote() {
 
+    // only for debugging purpose
     // if it does not have neighbor, set it as the leader.
-    if (neighbors.size() < 2) {
-        InitLeader();
-        return;
-    }
+    // if (neighbors.size() < 2) {
+    //     InitLeader();
+    //     return;
+    // }
 
     int voted, voter_term, voter_id;
     std::shared_ptr<ServerNode> server_node;
@@ -350,15 +352,24 @@ RequestVoteResponse ServerMetadata::RecvVoteResponse(std::shared_ptr<ClientSocke
 
 int ServerMetadata::ReplicateLog(bool is_heartbeat) {
 
+    // upon replicating log, try reconnecting with the failed servers
+    TryReconnect();
+
     // for each of the neighbors
         // get the length of the item sent to the neighbor
     int prefix_length, prefix_term, op_term, op_arg1, op_arg2, i;
     std::shared_ptr<ClientSocket> socket;
     LogRequest log_req;
     LogResponse log_res;
+    std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> new_node_socket;
 
+    bool failed = false;
     int term, ack, success;
-    int iteration = 0;
+
+    
+    int num_alive = 0;
+
+    // int idx = 0;
 
     for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
         i = server_index_map[it->first->id];
@@ -376,9 +387,17 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
             
             // send the log to the follower
             // std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
-            SendIdentifier(APPENDLOG_RPC, socket);
-            SendLogRequest(log_req, socket);
-            log_res = RecvLogResponse(socket);
+            if (!SendIdentifier(APPENDLOG_RPC, socket)) { // follower failure
+                CleanNodeState(i);
+                failed_neighbors.push_back(it->first);
+                continue;
+            }
+            if (!SendLogRequest(log_req, socket)) { // follower failure
+                CleanNodeState(i);
+                failed_neighbors.push_back(it->first);
+                continue;
+            }
+            log_res = RecvLogResponse(socket); // add recover logic
         }
 
         else { // for all the unsent op, send to the followers
@@ -392,12 +411,22 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
                 std::cout << log_req << std::endl;
                 
                 // send the log to the follower
-                SendIdentifier(APPENDLOG_RPC, socket);
-                SendLogRequest(log_req, socket);
+                if (!SendIdentifier(APPENDLOG_RPC, socket)) {
+                    failed = true;
+                    CleanNodeState(i);
+                    failed_neighbors.push_back(it->first);
+                    break;
+                }
+                if (!SendLogRequest(log_req, socket)) {
+                    failed = true;
+                    CleanNodeState(i);
+                    failed_neighbors.push_back(it->first);
+                    break;
+                }
 
                 // update the prefix_length logRequest accordingly with the response
                 log_res = RecvLogResponse(socket);
-                // std::cout << "(" << iteration++ << " iteration) log request sent to: " << it->first->id 
+                // std::cout << "(" << idx++ << " idx) log request sent to: " << it->first->id 
                 //           << ", prefix_length: " << prefix_length << std::endl;
                 // std::cout << "ACK: " << log_res.GetAck() << std::endl;
                 // std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
@@ -414,6 +443,8 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
                         ack_length[i] = ack;
                         prefix_length++;
                         CommitLog();
+
+                    // TODO: FIX THE LOGIC 
                     } else if (sent_length[i] > 0) { // send the previous log
                         sent_length[i]--;
                         prefix_length--;
@@ -426,11 +457,61 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
                     return 0;
                 }
             }
-            iteration = 0;
+            // idx = 0;
         }
 
+        if (failed) { // failed in the middle of sending the packets
+            failed = false;
+            continue;
+        }
+
+        num_alive += 1;
+        new_node_socket[it->first] = it->second; // add the mapping to the new
     }
+    node_socket = new_node_socket; // change with the new socket mapping
+
+    // // if the number of live servers are less than the majority, demote to the candidate
+    // if (num_alive * 2 < GetPeerSize()) {
+    //     SetStatus(CANDIDATE);
+    // }
+
     return 1;
+}
+
+void ServerMetadata::CleanNodeState(int idx) {
+    ack_length[idx] = 0;
+    sent_length[idx] = 0;
+    std::cout << "follower at idx: " << idx << " has failed" << std::endl;
+}
+
+void ServerMetadata::TryReconnect() {
+
+    // if there is no failed servers, return
+    if (failed_neighbors.empty()) {
+        return;
+    }
+
+	std::string ip;
+	int port;
+
+    // update the failed server queue
+    std::deque<std::shared_ptr<ServerNode>> new_failed_neighbors;
+
+    // iterate over all the failed servers, and try reconnecting 
+    // corner case: primary -> idle -> primary; empty the sockets and failed
+	for (const auto& node : failed_neighbors) {
+		port = node->port;
+		ip = node->ip;
+		std::shared_ptr<ClientSocket> socket = std::make_shared<ClientSocket>();
+		if (socket->Init(ip, port)) { // if connection is successful
+            SendIdentifier(SERVER_IDENTIFIER, socket); // first tell the server that it is server speaking
+            node_socket[node] = socket;
+            continue;
+        }
+        socket->Close();
+        new_failed_neighbors.push_back(node); // if unsucessful, keep the failed neighbors
+	}
+    failed_neighbors = new_failed_neighbors;
 }
 
 LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
@@ -497,7 +578,7 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
         log_res.SetLogResponse(factory_id, current_term, 0, 0); // set no response
     }
 
-    // log_res.Print();
+    std::cout << "Heartbeat received" << std::endl;
     SetHeartbeat(true);
     return log_res;
 }

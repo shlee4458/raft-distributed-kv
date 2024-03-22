@@ -34,6 +34,8 @@ private:
     int log_size;
     int voted_for;
     std::set<int> vote_received;
+    // std::map<int, int> sent_length;
+    // std::map<int, int> ack_length;
     int* sent_length; // reserve sent_length[size] for itself
     int* ack_length; // reserve ack_length[size] for itself
     bool heartbeat;
@@ -44,8 +46,8 @@ private:
     std::map<int, int> customer_record;
     std::vector<MapOp> smr_log;
     std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> node_socket;
+    std::deque<std::shared_ptr<ServerNode>> failed_neighbors;
     
-
 public:
     ServerMetadata();
 
@@ -108,6 +110,10 @@ public:
     LogResponse RecvLogResponse(std::shared_ptr<ClientSocket> socket);
     void CommitLog();
     void DropUncommittedLog(int size, int req_prefix_length);
+
+    // Server Failure related
+    void CleanNodeState(int idx);
+    void TryReconnect();
 };
 
 #endif
