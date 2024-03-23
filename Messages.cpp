@@ -716,11 +716,12 @@ std::ostream& operator<<(std::ostream& os, const LogRequest& req) {
 	os << "**** This is the log request ****\n"
 		<< "Leader ID: " << req.leader_id << ", "
 		<< "Current Term: " << req.current_term << ", "
+		<< "Prefix Term: " << req.prefix_term << ", "
 		<< "Prefix Length: " << req.prefix_length << ", "
 		<< "Commit Length: " << req.commit_length << ", "
 		<< "Operation Term: " << req.op_term  << ", "
-		<< "Commit Length: " << req.op_arg1 << ", "
-		<< "Commit Length: " << req.op_arg2 << std::endl;
+		<< "Arg1: " << req.op_arg1 << ", "
+		<< "Arg2: " << req.op_arg2 << std::endl;
 	return os;
 }
 

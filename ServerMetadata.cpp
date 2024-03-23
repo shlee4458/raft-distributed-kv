@@ -89,6 +89,10 @@ int ServerMetadata::GetValue(int customer_id) {
 }
 
 int ServerMetadata::GetTermAtIdx(int idx) {
+    if (idx < 0) {
+        return -1;
+    }
+
     return smr_log[idx].term;
 }
 
@@ -378,7 +382,7 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
         prefix_length = sent_length[i];
         prefix_term = 0;
         if (prefix_length > 0) {
-            prefix_term = smr_log[prefix_length - 1].term;
+            prefix_term = GetTermAtIdx(prefix_length - 1);
         }
 
         if (log_size == prefix_length) { // send emtpy heartbeat
@@ -402,13 +406,19 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
 
         else { // for all the unsent op, send to the followers
             while (prefix_length < log_size) {
+
+                // update the prefix_term
+                if (prefix_length > 0) {
+                    prefix_term = GetTermAtIdx(prefix_length - 1);
+                }
+
                 op_term = smr_log[prefix_length].term;
                 op_arg1 = smr_log[prefix_length].arg1;
                 op_arg2 = smr_log[prefix_length].arg2;
                 log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
                                 commit_length, op_term, op_arg1, op_arg2);
 
-                std::cout << log_req << std::endl;
+                // std::cout << log_req << std::endl;
                 
                 // send the log to the follower
                 if (!SendIdentifier(APPENDLOG_RPC, socket)) {
@@ -426,23 +436,26 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
 
                 // update the prefix_length logRequest accordingly with the response
                 log_res = RecvLogResponse(socket);
+
                 // std::cout << "(" << idx++ << " idx) log request sent to: " << it->first->id 
                 //           << ", prefix_length: " << prefix_length << std::endl;
                 // std::cout << "ACK: " << log_res.GetAck() << std::endl;
                 // std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
 
-                term = log_res.GetCurrentTerm();
-                ack = log_res.GetAck();
-                success = log_res.GetSuccess();
+                // term = log_res.GetCurrentTerm();
+                // ack = log_res.GetAck();
+                // success = log_res.GetSuccess();
+                // std::cout << "success: " << success << std::endl;
 
                 if (term == current_term && status == LEADER) {
                     // std::cout << "1st condition called!" << std::endl;
-                    if (success && ack >= ack_length[i]) {
-                        // std::cout << "2nd condition called!" << std::endl;
+                    if (success) {
                         sent_length[i] = ack;
                         ack_length[i] = ack;
                         prefix_length++;
-                        CommitLog();
+                        if (ack >= ack_length[i]) { // in case leader can commit
+                            CommitLog();
+                        }
 
                     // TODO: FIX THE LOGIC 
                     } else if (sent_length[i] > 0) { // send the previous log
@@ -547,6 +560,10 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
     included = (log_size > req_prefix_length);
     can_log = (log_size >= req_prefix_length) && 
                 (req_prefix_length == 0 || GetTermAtIdx(req_prefix_length - 1) == req_prefix_term);
+    // std::cout << "Log_size: " << log_size << std::endl;
+    // std::cout << "req_prefix_length: " << req_prefix_length << std::endl;
+    // std::cout << "Term at idx: " << GetTermAtIdx(req_prefix_length - 1) << std::endl;
+    // std::cout << "req_prefix_term: " << req_prefix_term << std::endl;
 
     if ((current_term == req_current_term) && can_log) {
         if (!included) {

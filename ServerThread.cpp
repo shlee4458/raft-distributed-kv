@@ -105,8 +105,7 @@ void LaptopFactory::ServerHandler(std::shared_ptr<ServerStub> stub) {
 	while (true) {
 		// check if the RPC is vote request or append log request
 		rpc = stub->IdentifyRPC();
-		switch (rpc)
-		{
+		switch (rpc) {
 			case REQUESTVOTE_RPC:
 				std::cout << "Candidate Vote RPC Received!" << std::endl;
 				ml.lock();
@@ -281,52 +280,51 @@ void LaptopFactory::TimeoutThread() {
 	while (true) {
 		current_term = metadata->GetCurrentTerm();
 		timeout = GetRandomTimeout();
-		switch (metadata->GetStatus())
-			{
-				case FOLLOWER:
-					// std::cout << "Current term: " << current_term << " - " << "Follower" << std::endl;
-					tl.lock();
-					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat(); });
-					tl.unlock();
+		switch (metadata->GetStatus()) {
+			case FOLLOWER:
+				// std::cout << "Current term: " << current_term << " - " << "Follower" << std::endl;
+				tl.lock();
+				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat(); });
+				tl.unlock();
 
-					ml.lock();
-					heartbeat = metadata->GetHeartbeat();
-					if (heartbeat) {
-						// std::cout << "Heartbeat was received!" << std::endl;
-						metadata->SetHeartbeat(false);
-					} else {
-						std::cout << "I became a candidate!" << std::endl;
-						metadata->SetStatus(CANDIDATE);
-					}
-					ml.unlock();
-					break;
+				ml.lock();
+				heartbeat = metadata->GetHeartbeat();
+				if (heartbeat) {
+					// std::cout << "Heartbeat was received!" << std::endl;
+					metadata->SetHeartbeat(false);
+				} else {
+					std::cout << "I became a candidate!" << std::endl;
+					metadata->SetStatus(CANDIDATE);
+				}
+				ml.unlock();
+				break;
 
-				case CANDIDATE:
-					std::cout << "Current term: " << current_term << " - " << "Candidate" << std::endl;
-					ml.lock();
-					metadata->RequestVote();
-					ml.unlock();
-					tl.lock();
-					timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
-											[&]{ return metadata->GetStatus() == LEADER // elected as the leader
-													 || metadata->GetStatus() == FOLLOWER; }); // found leader
-					tl.unlock();
-					if (metadata->GetStatus() == FOLLOWER) {
-						std::cout << "I became a follower!" << std::endl;
-					}
-					break;
-				case LEADER:
-					// for every 100ms send replicatelog
-					// std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
-					ml.lock();
-					metadata->ReplicateLog(true);
-					ml.unlock();
-					tl.lock();
-					timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
-											[&]{ return metadata->GetStatus() == FOLLOWER; });
-					tl.unlock();
-					break;
-			}
+			case CANDIDATE:
+				std::cout << "Current term: " << current_term << " - " << "Candidate" << std::endl;
+				ml.lock();
+				metadata->RequestVote();
+				ml.unlock();
+				tl.lock();
+				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
+										[&]{ return metadata->GetStatus() == LEADER // elected as the leader
+													|| metadata->GetStatus() == FOLLOWER; }); // found leader
+				tl.unlock();
+				if (metadata->GetStatus() == FOLLOWER) {
+					std::cout << "I became a follower!" << std::endl;
+				}
+				break;
+			case LEADER:
+				// for every 100ms send replicatelog
+				std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
+				ml.lock();
+				metadata->ReplicateLog(true);
+				ml.unlock();
+				tl.lock();
+				timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
+										[&]{ return metadata->GetStatus() == FOLLOWER; });
+				tl.unlock();
+				break;
+		}
 	}
 }
 
