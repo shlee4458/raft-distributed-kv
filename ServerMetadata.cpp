@@ -442,9 +442,9 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
                 // std::cout << "ACK: " << log_res.GetAck() << std::endl;
                 // std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
 
-                // term = log_res.GetCurrentTerm();
-                // ack = log_res.GetAck();
-                // success = log_res.GetSuccess();
+                term = log_res.GetCurrentTerm();
+                ack = log_res.GetAck();
+                success = log_res.GetSuccess();
                 // std::cout << "success: " << success << std::endl;
 
                 if (term == current_term && status == LEADER) {
@@ -629,7 +629,7 @@ void ServerMetadata::ExecuteLog(int idx) {
 void ServerMetadata::CommitLog() {
     // from the commit_length to log_size, find the maximum index that has majority of the vote received
     int commit_until, count;
-    for (int i = commit_length; i < log_size; i++) {
+    for (int i = commit_length; i < log_size + 1; i++) {
         count = 0;
         for (int j = 0; j < GetPeerSize() + 1; j++) {
             if (ack_length[j] >= i) {
@@ -647,7 +647,7 @@ void ServerMetadata::CommitLog() {
     }
 
     // if there exists log to commit
-    for (int i = commit_length; i < commit_until + 1; i++) {
+    for (int i = commit_length; i < commit_until; i++) {
         ExecuteLog(i);
     }
 

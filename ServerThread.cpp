@@ -315,7 +315,7 @@ void LaptopFactory::TimeoutThread() {
 				break;
 			case LEADER:
 				// for every 100ms send replicatelog
-				std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
+				// std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
 				ml.lock();
 				metadata->ReplicateLog(true);
 				ml.unlock();
@@ -323,6 +323,10 @@ void LaptopFactory::TimeoutThread() {
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
 										[&]{ return metadata->GetStatus() == FOLLOWER; });
 				tl.unlock();
+				if (metadata->GetStatus() == FOLLOWER) {
+					std::cout << "I became a follower!" << std::endl;
+				}
+
 				break;
 		}
 	}
