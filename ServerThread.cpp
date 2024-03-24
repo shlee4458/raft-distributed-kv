@@ -128,7 +128,7 @@ void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 	// receive the request vote message
 	RequestVoteMessage msg;
 	msg = stub->RecvRequestVote();
-	// msg.Print();
+	msg.Print();
 
 	// get the vote response to send
 	RequestVoteResponse res = metadata->GetVoteResponse(msg);
@@ -282,7 +282,7 @@ void LaptopFactory::TimeoutThread() {
 		timeout = GetRandomTimeout();
 		switch (metadata->GetStatus()) {
 			case FOLLOWER:
-				// std::cout << "Current term: " << current_term << " - " << "Follower" << std::endl;
+				std::cout << "Current term: " << current_term << " - " << "Follower" << std::endl;
 				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat(); });
 				tl.unlock();

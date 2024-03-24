@@ -105,6 +105,7 @@ public:
 
     // Replicate Log RPC
     int ReplicateLog(bool is_heartbeat);
+    int ReplicateLog();
     LogResponse GetLogResponse(LogRequest log_req);
     int SendLogRequest(LogRequest lr, std::shared_ptr<ClientSocket> socket);
     LogResponse RecvLogResponse(std::shared_ptr<ClientSocket> socket);

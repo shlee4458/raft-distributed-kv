@@ -367,13 +367,143 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
     LogResponse log_res;
     std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> new_node_socket;
 
-    bool failed = false;
     int term, ack, success;
-
-    
+    bool failed = false;
     int num_alive = 0;
-
     // int idx = 0;
+
+    for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
+        i = server_index_map[it->first->id];
+        socket = it->second;
+
+        prefix_length = sent_length[i];
+        prefix_term = 0;
+        if (prefix_length > 0) {
+            prefix_term = GetTermAtIdx(prefix_length - 1);
+        }
+
+        if (log_size == prefix_length) { // send emtpy heartbeat
+            log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
+                            commit_length, -1, -1, -1);
+            
+            // send the log to the follower
+            // std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
+            if (!SendIdentifier(APPENDLOG_RPC, socket)) { // follower failure
+                CleanNodeState(i);
+                failed_neighbors.push_back(it->first);
+                continue;
+            }
+            if (!SendLogRequest(log_req, socket)) { // follower failure
+                CleanNodeState(i);
+                failed_neighbors.push_back(it->first);
+                continue;
+            }
+            log_res = RecvLogResponse(socket); // add recover logic
+        }
+
+        else { // for all the unsent op, send to the followers
+            while (prefix_length < log_size) {
+
+                // update the prefix_term
+                if (prefix_length > 0) {
+                    prefix_term = GetTermAtIdx(prefix_length - 1);
+                }
+
+                op_term = smr_log[prefix_length].term;
+                op_arg1 = smr_log[prefix_length].arg1;
+                op_arg2 = smr_log[prefix_length].arg2;
+                log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
+                                commit_length, op_term, op_arg1, op_arg2);
+
+                // std::cout << log_req << std::endl;
+                
+                // send the log to the follower
+                if (!SendIdentifier(APPENDLOG_RPC, socket)) {
+                    failed = true;
+                    CleanNodeState(i);
+                    failed_neighbors.push_back(it->first);
+                    break;
+                }
+                if (!SendLogRequest(log_req, socket)) {
+                    failed = true;
+                    CleanNodeState(i);
+                    failed_neighbors.push_back(it->first);
+                    break;
+                }
+
+                // update the prefix_length logRequest accordingly with the response
+                log_res = RecvLogResponse(socket);
+
+                // std::cout << "(" << idx++ << " idx) log request sent to: " << it->first->id 
+                //           << ", prefix_length: " << prefix_length << std::endl;
+                // std::cout << "ACK: " << log_res.GetAck() << std::endl;
+                // std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
+
+                term = log_res.GetCurrentTerm();
+                ack = log_res.GetAck();
+                success = log_res.GetSuccess();
+                // std::cout << "success: " << success << std::endl;
+
+                if (term == current_term && status == LEADER) {
+                    // std::cout << "1st condition called!" << std::endl;
+                    if (success) {
+                        sent_length[i] = ack;
+                        ack_length[i] = ack;
+                        prefix_length++;
+                        if (ack >= ack_length[i]) { // in case leader can commit
+                            CommitLog();
+                        }
+
+                    // TODO: FIX THE LOGIC 
+                    } else if (sent_length[i] > 0) { // send the previous log
+                        sent_length[i]--;
+                        prefix_length--;
+                    }
+                } else if (term > current_term) { // demote to the follower
+                    current_term = term;
+                    status = FOLLOWER;
+                    voted_for = -1;
+                    vote_received.clear();
+                    return 0;
+                }
+            }
+            // idx = 0;
+        }
+
+        if (failed) { // failed in the middle of sending the packets
+            failed = false;
+            continue;
+        }
+
+        num_alive += 1;
+        new_node_socket[it->first] = it->second; // add the mapping to the new
+    }
+    node_socket = new_node_socket; // change with the new socket mapping
+
+    // // if the number of live servers are less than the majority, demote to the candidate
+    // if (num_alive * 2 < GetPeerSize()) {
+    //     SetStatus(CANDIDATE);
+    // }
+
+    return 1;
+}
+
+int ServerMetadata::ReplicateLog() {
+
+    // upon replicating log, try reconnecting with the failed servers
+    TryReconnect();
+
+    // for each of the neighbors
+        // get the length of the item sent to the neighbor
+    int prefix_length, prefix_term, op_term, op_arg1, op_arg2, i;
+    std::shared_ptr<ClientSocket> socket;
+    LogRequest log_req;
+    LogResponse log_res;
+    std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> new_node_socket;
+
+    int term, ack, success;
+    bool failed = false;
+    int num_alive = 0;
 
     for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
         i = server_index_map[it->first->id];
