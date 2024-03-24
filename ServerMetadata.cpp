@@ -3,6 +3,7 @@
 
 #include <string.h>
 #include <iostream>
+#include <random>
 
 #define FOLLOWER 1
 #define LEADER 2
@@ -130,6 +131,14 @@ bool ServerMetadata::GetVotedFor() {
 
 bool ServerMetadata::GetHeartbeat() {
     return heartbeat;
+}
+
+int ServerMetadata::GetPrefixTerm(int prefix_length) {
+    int prefix_term = 0;
+    if (prefix_length > 0) {
+        prefix_term = GetTermAtIdx(prefix_length - 1);
+    }
+    return prefix_term;
 }
 
 void ServerMetadata::SetFactoryId(int id) {
@@ -377,10 +386,7 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
         socket = it->second;
 
         prefix_length = sent_length[i];
-        prefix_term = 0;
-        if (prefix_length > 0) {
-            prefix_term = GetTermAtIdx(prefix_length - 1);
-        }
+        prefix_term = GetPrefixTerm(prefix_length);
 
         if (log_size == prefix_length) { // send emtpy heartbeat
             log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
@@ -405,9 +411,7 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
             while (prefix_length < log_size) {
 
                 // update the prefix_term
-                if (prefix_length > 0) {
-                    prefix_term = GetTermAtIdx(prefix_length - 1);
-                }
+                prefix_term = GetPrefixTerm(prefix_length);
 
                 op_term = smr_log[prefix_length].term;
                 op_arg1 = smr_log[prefix_length].arg1;
@@ -490,11 +494,12 @@ int ServerMetadata::ReplicateLog(bool is_heartbeat) {
 
 int ServerMetadata::ReplicateLog() {
 
-    // upon replicating log, try reconnecting with the failed servers
+    // TODO: change this function to send the replicatelog request in the round robin manner
+        // for the node that has already been updated to the latest
+            // send the heartbeat message in 1/10 chances
+
     TryReconnect();
 
-    // for each of the neighbors
-        // get the length of the item sent to the neighbor
     int prefix_length, prefix_term, op_term, op_arg1, op_arg2, i;
     std::shared_ptr<ClientSocket> socket;
     LogRequest log_req;
@@ -502,45 +507,46 @@ int ServerMetadata::ReplicateLog() {
     std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> new_node_socket;
 
     int term, ack, success;
-    bool failed = false;
-    int num_alive = 0;
+    int updated = true;
+    int num_change = 0;
+    bool first_round = true;
 
-    for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
-        i = server_index_map[it->first->id];
-        socket = it->second;
+    int rand_num;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 9);
 
-        prefix_length = sent_length[i];
-        prefix_term = 0;
-        if (prefix_length > 0) {
-            prefix_term = GetTermAtIdx(prefix_length - 1);
-        }
+    while (updated) {
+        rand_num = dis(gen);        
+        for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
+            i = server_index_map[it->first->id];
+            socket = it->second;
+            prefix_length = sent_length[i];
+            prefix_term = GetPrefixTerm(prefix_length);
 
-        if (log_size == prefix_length) { // send emtpy heartbeat
-            log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
-                            commit_length, -1, -1, -1);
-            
-            // send the log to the follower
-            // std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
-            if (!SendIdentifier(APPENDLOG_RPC, socket)) { // follower failure
-                CleanNodeState(i);
-                failed_neighbors.push_back(it->first);
-                continue;
-            }
-            if (!SendLogRequest(log_req, socket)) { // follower failure
-                CleanNodeState(i);
-                failed_neighbors.push_back(it->first);
-                continue;
-            }
-            log_res = RecvLogResponse(socket); // add recover logic
-        }
-
-        else { // for all the unsent op, send to the followers
-            while (prefix_length < log_size) {
-
-                // update the prefix_term
-                if (prefix_length > 0) {
-                    prefix_term = GetTermAtIdx(prefix_length - 1);
+            // if already fully updated, send heartbeat with 1/10 chance, except for the first round
+            if (log_size == prefix_length) {
+                if (first_round || rand_num == 1) {
+                    log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
+                                    commit_length, -1, -1, -1);
+                    
+                    // send the log to the follower
+                    std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
+                    if (!SendIdentifier(APPENDLOG_RPC, socket)) { // follower failure
+                        CleanNodeState(i);
+                        failed_neighbors.push_back(it->first);
+                        continue;
+                    }
+                    if (!SendLogRequest(log_req, socket)) { // follower failure
+                        CleanNodeState(i);
+                        failed_neighbors.push_back(it->first);
+                        continue;
+                    }
+                    log_res = RecvLogResponse(socket); // add recover logic
                 }
+            } else {
+                // update the prefix_term
+                prefix_term = GetPrefixTerm(prefix_length);
 
                 op_term = smr_log[prefix_length].term;
                 op_arg1 = smr_log[prefix_length].arg1;
@@ -552,25 +558,18 @@ int ServerMetadata::ReplicateLog() {
                 
                 // send the log to the follower
                 if (!SendIdentifier(APPENDLOG_RPC, socket)) {
-                    failed = true;
                     CleanNodeState(i);
                     failed_neighbors.push_back(it->first);
-                    break;
+                    continue;
                 }
                 if (!SendLogRequest(log_req, socket)) {
-                    failed = true;
                     CleanNodeState(i);
                     failed_neighbors.push_back(it->first);
-                    break;
+                    continue;
                 }
 
                 // update the prefix_length logRequest accordingly with the response
                 log_res = RecvLogResponse(socket);
-
-                // std::cout << "(" << idx++ << " idx) log request sent to: " << it->first->id 
-                //           << ", prefix_length: " << prefix_length << std::endl;
-                // std::cout << "ACK: " << log_res.GetAck() << std::endl;
-                // std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
 
                 term = log_res.GetCurrentTerm();
                 ack = log_res.GetAck();
@@ -578,7 +577,6 @@ int ServerMetadata::ReplicateLog() {
                 // std::cout << "success: " << success << std::endl;
 
                 if (term == current_term && status == LEADER) {
-                    // std::cout << "1st condition called!" << std::endl;
                     if (success) {
                         sent_length[i] = ack;
                         ack_length[i] = ack;
@@ -587,11 +585,11 @@ int ServerMetadata::ReplicateLog() {
                             CommitLog();
                         }
 
-                    // TODO: FIX THE LOGIC 
                     } else if (sent_length[i] > 0) { // send the previous log
                         sent_length[i]--;
                         prefix_length--;
                     }
+
                 } else if (term > current_term) { // demote to the follower
                     current_term = term;
                     status = FOLLOWER;
@@ -599,25 +597,18 @@ int ServerMetadata::ReplicateLog() {
                     vote_received.clear();
                     return 0;
                 }
+                num_change++;
             }
-            // idx = 0;
+            new_node_socket[it->first] = it->second;
         }
 
-        if (failed) { // failed in the middle of sending the packets
-            failed = false;
-            continue;
+        if (!num_change) {
+            updated = false;
         }
-
-        num_alive += 1;
-        new_node_socket[it->first] = it->second; // add the mapping to the new
+        first_round = false;
+        num_change = 0;
+        node_socket = new_node_socket;
     }
-    node_socket = new_node_socket; // change with the new socket mapping
-
-    // // if the number of live servers are less than the majority, demote to the candidate
-    // if (num_alive * 2 < GetPeerSize()) {
-    //     SetStatus(CANDIDATE);
-    // }
-
     return 1;
 }
 

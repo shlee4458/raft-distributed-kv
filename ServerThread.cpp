@@ -317,7 +317,7 @@ void LaptopFactory::TimeoutThread() {
 				// for every 100ms send replicatelog
 				// std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
 				ml.lock();
-				metadata->ReplicateLog(true);
+				metadata->ReplicateLog();
 				ml.unlock();
 				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
@@ -345,7 +345,7 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 	metadata->SetAckLength(-1, metadata->GetLogSize());
 
 	// send replicate log message to all of the neighbor nodes
-	valid_replicate = metadata->ReplicateLog(false);
+	valid_replicate = metadata->ReplicateLog();
 	if (!valid_replicate) {
 		std::cout << "It was not a valid replicate!" << std::endl;
 	}

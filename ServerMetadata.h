@@ -47,7 +47,7 @@ private:
     std::vector<MapOp> smr_log;
     std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> node_socket;
     std::deque<std::shared_ptr<ServerNode>> failed_neighbors;
-    
+
 public:
     ServerMetadata();
 
@@ -75,6 +75,7 @@ public:
     ReplicationRequest GetReplicationRequest(MapOp op);
     int GetNeighborSocketSize();
     std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> GetNodeSocket();
+    int GetPrefixTerm(int prefix_length);
 
     void SetFactoryId(int id);
     void SetLeaderId(int id);
