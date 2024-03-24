@@ -35,7 +35,6 @@ int ServerStub::ReturnRecord(std::shared_ptr<CustomerRecord> record) {
 }
 
 int ServerStub::IdentifySender() const {
-	// return 1 if it is another server, 2 if it is customer
 	char buffer[4];
 	auto identifier = std::shared_ptr<Identifier>(new Identifier());
 	if (socket->Recv(buffer, sizeof(int), 0)) {
@@ -51,12 +50,14 @@ int ServerStub::SendIsLeader(int is_leader) {
 	int size = identifier.Size();
 	identifier.SetIdentifier(is_leader + 1);
 	identifier.Marshal(buffer);
+	std::cout << "Is leader sent!" << std::endl;
 	return socket->Send(buffer, size, 0);	
 }
 
 int ServerStub::SendLeaderInfo(LeaderInfo info) {
 	char buffer[32];
 	info.Marshal(buffer);
+	std::cout << "Leader into sent!" << std::endl;
 	return socket->Send(buffer, info.Size(), 0);
 }
 

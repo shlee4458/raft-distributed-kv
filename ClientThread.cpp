@@ -37,9 +37,9 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 
 	// send the one-time identifier first
 	identifier.SetIdentifier(CLIENT_IDENTIFIER);
-	stub.SendIdentifier(identifier); // A
-	is_leader = stub.RecvIsLeader(); // B
-	std::cout << is_leader << std::endl;
+	stub.SendIdentifier(identifier);
+	is_leader = stub.RecvIsLeader();
+	std::cout << "Is it leader?: "<< is_leader << std::endl;
 
 	// if the request type is update and is not leader, reopen the socket with the leader
 	if (is_leader == FOLLOWER) {
@@ -47,13 +47,19 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 		info = stub.RecvLeaderInfo();
 		ip = info.GetIp();
 		port = info.GetPort();
+		std::cout << "This is IP: " << ip << std::endl;
+		std::cout << "This is port: " << port << std::endl;
 
 		// if it is update request, reroute to the new server
 		if (request_type == UPDATE_REQUEST) {
+			std::cout << "Trying to connect with the leader!" << std::endl;
 			if (!stub.Init(ip, port)) {
+
 				std::cout << "Thread " << customer_id << " failed to connect" << std::endl;
 				return;
 			}
+			stub.SendIdentifier(identifier);
+			is_leader = stub.RecvIsLeader();
 			std::cout << "Connected with the new leader!" << std::endl;
 		}
 		

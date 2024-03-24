@@ -1,5 +1,7 @@
 #include "ClientStub.h"
 
+#include <iostream>
+
 ClientStub::ClientStub() {}
 
 int ClientStub::Init(std::string ip, int port) {
@@ -58,6 +60,7 @@ LeaderInfo ClientStub::RecvLeaderInfo() {
 	LeaderInfo info;
 	int size = info.Size();
 	if (socket.Recv(buffer, size, 0)) {
+		std::cout << "Received leader info" << std::endl;
 		info.Unmarshal(buffer);
 		return info;
 	}

@@ -421,31 +421,31 @@ void LeaderInfo::Unmarshal(char *buffer) {
 	offset += sizeof(net_port);
 
 	ip0 = ntohl(net_ip0);
-	ip1 = ntohl(net_ip0);
-    ip2 = ntohl(net_ip0); 
-    ip3 = ntohl(net_ip0);
-    net_port = ntohl(net_port);
+	ip1 = ntohl(net_ip1);
+    ip2 = ntohl(net_ip2); 
+    ip3 = ntohl(net_ip3);
+    port = ntohl(net_port);
 }
 
 void LeaderInfo::ParseIp(std::string ip) {
 	
 	// iterate over the string and add the substring delimited with the . as a single
 	int cur_num = 0;
-	std::vector<int> ips;
+	int ips[4];
+	int i = 0;
 	for (char c : ip) {
 		if (c == '.') {
-			ips.push_back(cur_num);
+			ips[i++] = cur_num;
 			cur_num = 0;
 			continue;
 		}
 		cur_num = cur_num * 10 + (c - '0');
-		
 	}
-	ips.push_back(cur_num);
-	ip0 = ips[0];
-	ip1 = ips[1];
-	ip2 = ips[2];
-	ip3 = ips[3];
+	ips[i] = cur_num;
+	this->ip0 = ips[0];
+	this->ip1 = ips[1];
+	this->ip2 = ips[2];
+	this->ip3 = ips[3];
 }
 
 /**
