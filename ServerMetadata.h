@@ -82,6 +82,7 @@ public:
     void SetStatus(int status);
     void SetCurrentTerm(int term);
     void SetVotedFor(int id);
+    void EmptyVoteReceived();
     int SetCommitLength();
     void SetAckLength(int node_idx, int size);
     void SetHeartbeat(bool heartbeat);

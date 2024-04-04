@@ -595,7 +595,8 @@ void RequestVoteResponse::Print() {
 /**
  * Log Request
 */
-LogRequest::LogRequest(){ }
+LogRequest::LogRequest()
+	:leader_id(-1){ }
 
 void LogRequest::SetLogRequest(int leader_id, int current_term, int prefix_length, int prefix_term,
 					   int commit_length, int op_term, int op_arg1, int op_arg2) {
@@ -645,6 +646,10 @@ int LogRequest::GetOpArg1() {
 
 int LogRequest::GetOpArg2() {
 	return op_arg2;
+}
+
+int LogRequest::IsValid() {
+	return leader_id != -1;
 }
 
 void LogRequest::Marshal(char *buffer) {

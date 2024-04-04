@@ -62,9 +62,9 @@ int main(int argc, char *argv[]) {
 	thread_vector.push_back(std::move(leader_thread));
 
 	// create the follower admin thread
-	std::thread follower_thread(&LaptopFactory::FollowerThread,
-			&factory);
-	thread_vector.push_back(std::move(follower_thread));	
+	// std::thread follower_thread(&LaptopFactory::FollowerThread,
+	// 		&factory);
+	// thread_vector.push_back(std::move(follower_thread));	
 	
 	// create the candidate thread
 		// this will initialize

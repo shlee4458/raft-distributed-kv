@@ -105,6 +105,10 @@ void LaptopFactory::ServerHandler(std::shared_ptr<ServerStub> stub) {
 	while (true) {
 		// check if the RPC is vote request or append log request
 		rpc = stub->IdentifyRPC();
+		// if (rpc == -1) {
+		// 	std::cout << "Server has died..., I should gracefully exit!" << std::endl;
+		// 	return;
+		// }
 		switch (rpc) {
 			case REQUESTVOTE_RPC:
 				std::cout << "Candidate Vote RPC Received!" << std::endl;
@@ -144,8 +148,13 @@ int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
 	LogResponse log_res;
 	
 	request = stub->RecvLogRequest();
+	if (!request.IsValid()) {
+		std::cout << "Leader died while watiing for log request!" << std::endl;
+	}
 	log_res = metadata->GetLogResponse(request);
-	stub->SendLogResponse(log_res);
+	if (!stub->SendLogResponse(log_res)) {
+		std::cout << "Leader died while sending log response!" << std::endl;
+	}
 	return 1;
 }
 
@@ -236,55 +245,25 @@ void LaptopFactory::LeaderThread(int id) {
 	}
 }
 
-void LaptopFactory::FollowerThread() {
-	std::unique_lock<std::mutex> rl(rep_lock, std::defer_lock), 
-								 ml(meta_lock, std::defer_lock),
-								 tl(timeout_lock, std::defer_lock);
-	std::shared_ptr<ServerStub> stub;
-	LogResponse log_res;
-
-	while (true) {
-		rl.lock();
-		if (req.empty()) {
-			rep_cv.wait(rl, [this]{ return !req.empty(); });
-		}
-		if (DEBUG) {
-			std::cout << "Successfully received the replication request" << std::endl;
-		}
-		auto request = std::move(req.front());
-		req.pop();
-		rl.unlock();
-
-		// get the log response based on the log request
-		ml.lock();
-		log_res = metadata->GetLogResponse(request->log_request);
-		ml.unlock();
-
-		// send the log response to the leader
-		stub = request->stub;
-		stub->SendLogResponse(log_res);
-
-		if (DEBUG) {
-			std::cout << "I sent log response to the leader!" << std::endl;
-		}
-	}
-}
 
 void LaptopFactory::TimeoutThread() {
-	int timeout, current_term;
+	int timeout, current_term, status;
 	bool heartbeat;
 	std::unique_lock<std::mutex> tl(timeout_lock, std::defer_lock),
 								 ml(meta_lock, std::defer_lock);
 
 	// if the current state is;
 	while (true) {
+		ml.lock();
 		current_term = metadata->GetCurrentTerm();
+		status = metadata->GetStatus();
+		ml.unlock();
 		timeout = GetRandomTimeout();
-		switch (metadata->GetStatus()) {
+		switch (status) {
 			case FOLLOWER:
 				std::cout << "Current term: " << current_term << " - " << "Follower" << std::endl;
 				tl.lock();
-				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat(); });
+				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat();});
 				tl.unlock();
 
 				ml.lock();
@@ -301,29 +280,31 @@ void LaptopFactory::TimeoutThread() {
 
 			case CANDIDATE:
 				std::cout << "Current term: " << current_term << " - " << "Candidate" << std::endl;
-				ml.lock();
 				metadata->RequestVote();
-				ml.unlock();
 				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
 										[&]{ return metadata->GetStatus() == LEADER // elected as the leader
 													|| metadata->GetStatus() == FOLLOWER; }); // found leader
 				tl.unlock();
-				if (metadata->GetStatus() == FOLLOWER) {
+				ml.lock();
+				status = metadata->GetStatus();
+				ml.unlock();
+				if (status == FOLLOWER) {
 					std::cout << "I became a follower!" << std::endl;
 				}
 				break;
 			case LEADER:
 				// for every 100ms send replicatelog
 				// std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
-				ml.lock();
 				metadata->ReplicateLog();
-				ml.unlock();
 				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
 										[&]{ return metadata->GetStatus() == FOLLOWER; });
 				tl.unlock();
-				if (metadata->GetStatus() == FOLLOWER) {
+				ml.lock();
+				status = metadata->GetStatus();
+				ml.unlock();
+				if (status == FOLLOWER) {
 					std::cout << "I became a follower!" << std::endl;
 				}
 
@@ -355,6 +336,42 @@ LeaderMaintainLog(int customer_id, int order_num, const std::shared_ptr<ServerSt
 int LaptopFactory::GetRandomTimeout() {
 	std::random_device rd;
 	std::mt19937 gen(rd());
-	std::uniform_int_distribution<> dist(150, 300);
+	std::uniform_int_distribution<> dist(200, 300);
 	return dist(gen);
 }
+
+
+
+// void LaptopFactory::FollowerThread() {
+// 	std::unique_lock<std::mutex> rl(rep_lock, std::defer_lock), 
+// 								 ml(meta_lock, std::defer_lock),
+// 								 tl(timeout_lock, std::defer_lock);
+// 	std::shared_ptr<ServerStub> stub;
+// 	LogResponse log_res;
+
+// 	while (true) {
+// 		rl.lock();
+// 		if (req.empty()) {
+// 			rep_cv.wait(rl, [this]{ return !req.empty(); });
+// 		}
+// 		if (DEBUG) {
+// 			std::cout << "Successfully received the replication request" << std::endl;
+// 		}
+// 		auto request = std::move(req.front());
+// 		req.pop();
+// 		rl.unlock();
+
+// 		// get the log response based on the log request
+// 		ml.lock();
+// 		log_res = metadata->GetLogResponse(request->log_request);
+// 		ml.unlock();
+
+// 		// send the log response to the leader
+// 		stub = request->stub;
+// 		stub->SendLogResponse(log_res);
+
+// 		if (DEBUG) {
+// 			std::cout << "I sent log response to the leader!" << std::endl;
+// 		}
+// 	}
+// }

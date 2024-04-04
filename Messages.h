@@ -150,6 +150,12 @@ private:
 };
 
 class RequestVoteMessage {
+private:
+	int id;
+	int current_term;
+	int log_size;
+	int last_term;
+
 public:
 	RequestVoteMessage();
 	void SetRequestVoteMessage(int id, int current_term, int log_size, int last_term);
@@ -164,12 +170,14 @@ public:
 	void Unmarshal(char *buffer);
 
 	void Print();
-
-private:
-	int id, current_term, log_size, last_term;
 };
 
 class RequestVoteResponse {
+private:
+	int id;
+	int current_term;
+	int voted;
+
 public:
 	RequestVoteResponse();
 	void SetRequestVoteResponse(int id, int current_term, int voted);
@@ -183,12 +191,19 @@ public:
 	void Unmarshal(char *buffer);
 
 	void Print();
-
-private:
-	int id, current_term, voted;
 };
 
 class LogRequest {
+private:
+	int leader_id;
+	int current_term;
+	int prefix_length; // size of sent log 
+	int prefix_term; // term of the last sent log
+	int commit_length; 
+	int op_term; // log_term
+	int op_arg1; // customer_id
+	int op_arg2; // order_number
+
 public:
 	LogRequest();
 	void SetLogRequest(int leader_id, 
@@ -209,22 +224,20 @@ public:
 	int GetOpTerm();
 	int GetOpArg1();
 	int GetOpArg2();
+	int IsValid();
 
 	void Marshal(char *buffer);
 	void Unmarshal(char *buffer);
 	friend std::ostream& operator<<(std::ostream& os, const LogRequest& req);
-private:
-	int leader_id;
-	int current_term;
-	int prefix_length;
-	int prefix_term;
-	int commit_length;
-	int op_term;
-	int op_arg1;
-	int op_arg2;
 };
 
 class LogResponse {
+private:
+	int follower_id;
+	int current_term;
+	int ack; // size of the committed log
+	int success; // 1 if sucess else 0
+
 public:
 	LogResponse();
 	void SetLogResponse(int follower_id, 
@@ -243,12 +256,6 @@ public:
 	friend std::ostream& operator<<(std::ostream& os, const LogRequest& req);
 
 	void Print();
-	
-private:
-	int follower_id;
-	int current_term;
-	int ack;
-	int success;
 };
 
 #endif // #ifndef __MESSAGES_H__

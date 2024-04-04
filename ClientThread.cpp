@@ -47,14 +47,10 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 		info = stub.RecvLeaderInfo();
 		ip = info.GetIp();
 		port = info.GetPort();
-		std::cout << "This is IP: " << ip << std::endl;
-		std::cout << "This is port: " << port << std::endl;
 
 		// if it is update request, reroute to the new server
 		if (request_type == UPDATE_REQUEST) {
-			std::cout << "Trying to connect with the leader!" << std::endl;
 			if (!stub.Init(ip, port)) {
-
 				std::cout << "Thread " << customer_id << " failed to connect" << std::endl;
 				return;
 			}

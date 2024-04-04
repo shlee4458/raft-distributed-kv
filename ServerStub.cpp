@@ -83,6 +83,9 @@ int ServerStub::IdentifyRPC() {
 	Identifier identifier;
 	int size = identifier.Size();
 	socket->Recv(buffer, size, 0);
+	// if (!socket->Recv(buffer, size, 0)) { // if the server dies
+	// 	return -1;
+	// }
 	identifier.Unmarshal(buffer);
 	return identifier.GetIdentifier();
 }
