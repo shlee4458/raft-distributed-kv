@@ -254,10 +254,10 @@ void LaptopFactory::TimeoutThread() {
 
 	// if the current state is;
 	while (true) {
-		ml.lock();
+		// ml.lock();
 		current_term = metadata->GetCurrentTerm();
 		status = metadata->GetStatus();
-		ml.unlock();
+		// ml.unlock();
 		timeout = GetRandomTimeout();
 		switch (status) {
 			case FOLLOWER:
@@ -280,7 +280,9 @@ void LaptopFactory::TimeoutThread() {
 
 			case CANDIDATE:
 				std::cout << "Current term: " << current_term << " - " << "Candidate" << std::endl;
+				ml.lock();
 				metadata->RequestVote();
+				ml.unlock();
 				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
 										[&]{ return metadata->GetStatus() == LEADER // elected as the leader
@@ -296,7 +298,9 @@ void LaptopFactory::TimeoutThread() {
 			case LEADER:
 				// for every 100ms send replicatelog
 				// std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
+				ml.lock();
 				metadata->ReplicateLog();
+				ml.unlock();
 				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
 										[&]{ return metadata->GetStatus() == FOLLOWER; });
