@@ -173,6 +173,12 @@ void ServerMetadata::SetHeartbeat(bool heartbeat) {
 }
 
 int ServerMetadata::IsLeader() {
+    if (leader_id != -1) { // there is a leader
+        return leader_id == factory_id; // return value: 0 or 1
+
+    } else { // there is no leader
+        return -1;
+    }
     return leader_id == factory_id;
 }
 

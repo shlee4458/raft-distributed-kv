@@ -60,15 +60,18 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 		}
 		
 	} else if (is_leader == 0) {
-		std::cout << "identifier not sent" << std::endl;
-		return;
+		std::cout << "There is no leader! If your order is update, send request again in 1 minute.." << std::endl;
 	}
-
+	
 	for (int i = 0; i < num_requests; i++) {
 		timer.Start();
 		// based on the request_type, call different RPC
 		switch (request_type) {
 			case UPDATE_REQUEST:
+				if (!is_leader) {
+					return;
+				}
+
 				std::cout << "Sending Update Request" << std::endl;
 				request.SetRequest(customer_id, i, UPDATE_REQUEST);
 				laptop = stub.Order(request);
@@ -83,6 +86,7 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 			case READ_REQUEST:
 			case DEBUG:
 				// change the request record to 2
+				std::cout << "Sending the read request!" << std::endl;
 				request.SetRequest(i, -1, READ_REQUEST);
 				record = stub.ReadRecord(request);
 				if (request_type == DEBUG && record.IsValid()) {

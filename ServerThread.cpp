@@ -171,13 +171,13 @@ void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub>
 	// let the customer know if leader or not
 	stub->SendIsLeader(metadata->IsLeader()); // B
 
-	if (!metadata->IsLeader()) {
+	if (!metadata->IsLeader()) { // there is a leader and is not the leader(val == 0)
 		// tell the client that the order to be sent to this
 		// INVARIABLE: there is always a leader when the client is sending an update request
 		std::string ip = metadata->GetLeaderIp();
 		int port = metadata->GetLeaderPort();
 		LeaderInfo info;
-		info.SetLeaderInfo(ip, port);
+		info.SetLeaderInfo(ip, port); // if there is no leader, send "", 0
 		stub->SendLeaderInfo(info);
 	}
 
