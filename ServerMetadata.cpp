@@ -424,6 +424,12 @@ int ServerMetadata::ReplicateLog() {
                         continue;
                     }
                     log_res = RecvLogResponse(socket); // add recover logic
+
+                    if (log_res.GetFollowerId() == -1) { // follower failure
+                        CleanNodeState(i);
+                        failed_neighbors.push_back(it->first);
+                        continue;
+                    }
                 }
             } else {
                 // update the prefix_term
@@ -435,7 +441,7 @@ int ServerMetadata::ReplicateLog() {
                 log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
                                 commit_length, op_term, op_arg1, op_arg2);
 
-                // std::cout << log_req << std::endl;
+                std::cout << log_req << std::endl;
                 
                 // send the log to the follower
                 if (!SendIdentifier(APPENDLOG_RPC, socket)) {
@@ -450,7 +456,14 @@ int ServerMetadata::ReplicateLog() {
                 }
 
                 // update the prefix_length logRequest accordingly with the response
+                
                 log_res = RecvLogResponse(socket);
+                if (log_res.GetFollowerId() == -1) {
+                    CleanNodeState(i);
+                    std::cout << "Log Response was not valid!!" << std::endl;
+                    failed_neighbors.push_back(it->first);
+                    continue;
+                }
 
                 term = log_res.GetCurrentTerm();
                 ack = log_res.GetAck();
@@ -491,6 +504,7 @@ int ServerMetadata::ReplicateLog() {
         }
         first_round = false;
         num_change = 0;
+        std::cout << "Num of socket in the new node_socket: " << node_socket.size() << std::endl;
         node_socket = new_node_socket;
     }
     return 1;
@@ -640,7 +654,9 @@ void ServerMetadata::ExecuteLog(int idx) {
 
 void ServerMetadata::CommitLog() {
     // from the commit_length to log_size, find the maximum index that has majority of the vote received
-    int commit_until, count;
+    int commit_until = 0;
+    int count = 0;
+
     for (int i = commit_length; i < log_size + 1; i++) {
         count = 0;
         for (int j = 0; j < GetPeerSize() + 1; j++) {
@@ -678,7 +694,10 @@ LogResponse ServerMetadata::RecvLogResponse(std::shared_ptr<ClientSocket> socket
     LogResponse log_res;
     char buffer[32];
     int size = log_res.Size();
-    socket->Recv(buffer, size, 0);
+    if (!socket->Recv(buffer, size, 0)) {
+        std::cout << "Follower has failed before sending the log response" << std::endl;
+        return log_res;
+    }
     log_res.Unmarshal(buffer);
     return log_res;
 }

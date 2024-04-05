@@ -734,7 +734,8 @@ std::ostream& operator<<(std::ostream& os, const LogRequest& req) {
  * Log Response
 */
 
-LogResponse::LogResponse() { }
+LogResponse::LogResponse() 
+: follower_id(-1), current_term(-1), ack(-1), success(-1) { }
 
 void LogResponse::SetLogResponse(int follower_id, int current_term, int ack, int success) {
 	this->follower_id = follower_id;

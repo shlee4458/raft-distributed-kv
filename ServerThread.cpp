@@ -150,10 +150,12 @@ int LaptopFactory::AppendLogHandler(std::shared_ptr<ServerStub> stub) {
 	request = stub->RecvLogRequest();
 	if (!request.IsValid()) {
 		std::cout << "Leader died while watiing for log request!" << std::endl;
+		return 0;
 	}
 	log_res = metadata->GetLogResponse(request);
 	if (!stub->SendLogResponse(log_res)) {
 		std::cout << "Leader died while sending log response!" << std::endl;
+		return 0;
 	}
 	return 1;
 }
