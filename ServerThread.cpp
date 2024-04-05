@@ -78,9 +78,6 @@ EngineerThread(std::shared_ptr<ServerSocket> socket,
 	while (true) {
 		switch (sender) {
 			case SERVER_IDENTIFIER:
-				if (DEBUG) {
-					// std::cout << "Received a message from another server!!" << std::endl;
-				}
 				ServerHandler(std::move(stub));
 				break;
 			case CUSTOMER_IDENTIFIER:
@@ -132,7 +129,6 @@ void LaptopFactory::CandidateVoteHandler(std::shared_ptr<ServerStub> stub) {
 	// receive the request vote message
 	RequestVoteMessage msg;
 	msg = stub->RecvRequestVote();
-	msg.Print();
 
 	// get the vote response to send
 	RequestVoteResponse res = metadata->GetVoteResponse(msg);
@@ -172,8 +168,6 @@ void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub>
 	stub->SendIsLeader(metadata->IsLeader()); // B
 
 	if (!metadata->IsLeader()) { // there is a leader and is not the leader(val == 0)
-		// tell the client that the order to be sent to this
-		// INVARIABLE: there is always a leader when the client is sending an update request
 		std::string ip = metadata->GetLeaderIp();
 		int port = metadata->GetLeaderPort();
 		LeaderInfo info;
@@ -213,7 +207,6 @@ void LaptopFactory::CustomerHandler(int engineer_id, std::shared_ptr<ServerStub>
 
 int LaptopFactory::
 ReadRecord(int customer_id) {
-	// no synchronization issue; one thread for the client read operation
 	return metadata->GetValue(customer_id);
 }
 
@@ -313,7 +306,6 @@ void LaptopFactory::TimeoutThread() {
 				if (status == FOLLOWER) {
 					std::cout << "I became a follower!" << std::endl;
 				}
-
 				break;
 		}
 	}
@@ -345,39 +337,3 @@ int LaptopFactory::GetRandomTimeout() {
 	std::uniform_int_distribution<> dist(200, 300);
 	return dist(gen);
 }
-
-
-
-// void LaptopFactory::FollowerThread() {
-// 	std::unique_lock<std::mutex> rl(rep_lock, std::defer_lock), 
-// 								 ml(meta_lock, std::defer_lock),
-// 								 tl(timeout_lock, std::defer_lock);
-// 	std::shared_ptr<ServerStub> stub;
-// 	LogResponse log_res;
-
-// 	while (true) {
-// 		rl.lock();
-// 		if (req.empty()) {
-// 			rep_cv.wait(rl, [this]{ return !req.empty(); });
-// 		}
-// 		if (DEBUG) {
-// 			std::cout << "Successfully received the replication request" << std::endl;
-// 		}
-// 		auto request = std::move(req.front());
-// 		req.pop();
-// 		rl.unlock();
-
-// 		// get the log response based on the log request
-// 		ml.lock();
-// 		log_res = metadata->GetLogResponse(request->log_request);
-// 		ml.unlock();
-
-// 		// send the log response to the leader
-// 		stub = request->stub;
-// 		stub->SendLogResponse(log_res);
-
-// 		if (DEBUG) {
-// 			std::cout << "I sent log response to the leader!" << std::endl;
-// 		}
-// 	}
-// }

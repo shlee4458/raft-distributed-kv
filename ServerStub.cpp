@@ -96,9 +96,6 @@ LogRequest ServerStub::RecvLogRequest() {
 	
 	int size = request.Size();
 	if (socket->Recv(buffer, size, 0)) {
-		if (DEBUG) {
-			// std::cout << "Log Request Received!!!!" << std::endl;
-		}
 		request.Unmarshal(buffer);
 	}
 	return request;

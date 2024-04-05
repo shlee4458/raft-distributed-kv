@@ -40,11 +40,13 @@ private:
     int* ack_length; // reserve ack_length[size] for itself
     bool heartbeat;
 
+    std::map<int, int> customer_record;
+    std::vector<MapOp> smr_log;
+
     std::map<int, int> server_index_map;
     std::vector<std::shared_ptr<ServerNode>> neighbors;
     std::deque<std::shared_ptr<ClientSocket>> neighbor_sockets; // socket to the backup nodes as a primary
-    std::map<int, int> customer_record;
-    std::vector<MapOp> smr_log;
+
     std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> node_socket;
     std::deque<std::shared_ptr<ServerNode>> failed_neighbors;
 

@@ -94,7 +94,6 @@ int ServerMetadata::GetTermAtIdx(int idx) {
     if (idx < 0) {
         return -1;
     }
-
     return smr_log[idx].term;
 }
 
@@ -189,7 +188,6 @@ void ServerMetadata::AddNeighbors(std::shared_ptr<ServerNode> node, int idx) {
 
 void ServerMetadata::InitNeighbors() {
 
-    // corner case: primary -> idle -> primary; empty the sockets and failed
     node_socket.clear();
     failed_neighbors.clear();
 
@@ -202,8 +200,7 @@ void ServerMetadata::InitNeighbors() {
 		std::shared_ptr<ClientSocket> socket = std::make_shared<ClientSocket>();
 		if (socket->Init(ip, port)) { // if connection is successful
             SendIdentifier(SERVER_IDENTIFIER, socket); // first tell the server that it is server speaking
-            node_socket[node] = socket; // CLOSE THE SOCKET WHEN THE SERVER LEAVES
-            // neighbor_sockets.push_back(std::move(socket));
+            node_socket[node] = socket;
         }
 	}
 }
@@ -265,10 +262,6 @@ void ServerMetadata::RequestVote() {
 
     // request vote to all the neighbors
     for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
-        // std::cout << "Sending vote request to servers" << std::endl;
-
-        // TODO: consider having thread pool of size peersize - 1 collect votes
-        // send the identifier that it is request vote rpc
         server_node = it->first;
         socket = it->second;
 
@@ -286,14 +279,11 @@ void ServerMetadata::RequestVote() {
         // res.Print();
 
         // check if the vote is valid, and update the voted
-        // std::cout << "Collecting vote from: " << server_node->id << std::endl;
         if ((current_term == voter_term) && voted) {
-            // std::cout << "I have received the vote!" << std::endl;
             vote_received.insert(voter_id);
 
             // if the vote is majority
             if (WonElection()) {
-                // std::cout << "Won the election!" << std::endl;
                 InitLeader();
                 return;
             }
@@ -328,9 +318,6 @@ RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
     int cand_last_term = msg.GetLastTerm();
     int last_term = GetLastTerm();
 
-    // std::cout << "This is the vote request that I have received!" << std::endl;
-    // msg.Print();
-
     // if more higher term candidate vote is received
     if (cand_current_term > current_term) {
         SetCurrentTerm(cand_current_term);
@@ -350,7 +337,6 @@ RequestVoteResponse ServerMetadata::GetVoteResponse(RequestVoteMessage msg) {
     }
 
     SetHeartbeat(true);
-    // std::cout << "#### Heartbeat was set to true!! ####" << std::endl;
     return res;
 }
 
@@ -380,10 +366,6 @@ RequestVoteResponse ServerMetadata::RecvVoteResponse(std::shared_ptr<ClientSocke
 
 
 int ServerMetadata::ReplicateLog() {
-
-    // TODO: change this function to send the replicatelog request in the round robin manner
-        // for the node that has already been updated to the latest
-            // send the heartbeat message in 1/10 chances
 
     TryReconnect();
 
@@ -418,7 +400,6 @@ int ServerMetadata::ReplicateLog() {
                                     commit_length, -1, -1, -1);
                     
                     // send the log to the follower
-                    // std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
                     if (!SendIdentifier(APPENDLOG_RPC, socket)) { // follower failure
                         CleanNodeState(i);
                         failed_neighbors.push_back(it->first);
@@ -429,7 +410,7 @@ int ServerMetadata::ReplicateLog() {
                         failed_neighbors.push_back(it->first);
                         continue;
                     }
-                    log_res = RecvLogResponse(socket); // add recover logic
+                    log_res = RecvLogResponse(socket);
 
                     if (log_res.GetFollowerId() == -1) { // follower failure
                         CleanNodeState(i);
@@ -437,6 +418,7 @@ int ServerMetadata::ReplicateLog() {
                         continue;
                     }
                 }
+
             } else {
                 // update the prefix_term
                 prefix_term = GetPrefixTerm(prefix_length);
@@ -462,7 +444,6 @@ int ServerMetadata::ReplicateLog() {
                 }
 
                 // update the prefix_length logRequest accordingly with the response
-                
                 log_res = RecvLogResponse(socket);
                 if (log_res.GetFollowerId() == -1) {
                     CleanNodeState(i);
@@ -474,10 +455,9 @@ int ServerMetadata::ReplicateLog() {
                 term = log_res.GetCurrentTerm();
                 ack = log_res.GetAck();
                 success = log_res.GetSuccess();
-                // std::cout << "success: " << success << std::endl;
-                std::cout << "Term: " << term << std::endl;
-                std::cout << "Ack: " << ack << std::endl;
-                std::cout << "Success: " << success << std::endl;
+                // std::cout << "Term: " << term << std::endl;
+                // std::cout << "Ack: " << ack << std::endl;
+                // std::cout << "Success: " << success << std::endl;
 
                 if (term == current_term && status == LEADER) {
                     if (success) {
@@ -536,7 +516,6 @@ void ServerMetadata::TryReconnect() {
     std::deque<std::shared_ptr<ServerNode>> new_failed_neighbors;
 
     // iterate over all the failed servers, and try reconnecting 
-    // corner case: primary -> idle -> primary; empty the sockets and failed
 	for (const auto& node : failed_neighbors) {
 		port = node->port;
 		ip = node->ip;
@@ -554,9 +533,6 @@ void ServerMetadata::TryReconnect() {
 
 LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
     
-    // TODO: add logic where the candidate becomes follower, when the LogRequest is received
-        // and the current candidate's current term is higher than the current leader
-
     int req_leader_id, req_current_term, req_prefix_length, req_prefix_term;
     int req_commit_length, req_op_term, req_op_arg1, req_op_arg2;
     bool included, can_log;
@@ -581,12 +557,6 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
         SetVotedFor(-1);
         heartbeat = true; // reset the timeout
     } 
-
-    // if the current was candidate, update the status
-    // if (current_term == req_current_term) { // found the leader
-    //     SetStatus(FOLLOWER);
-    //     SetLeaderId(req_leader_id);
-    // }
 
     included = (log_size > req_prefix_length);
     can_log = (log_size >= req_prefix_length) && 
@@ -613,11 +583,6 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
 
                 // commit a single log at the current prefix length + 1
                 ExecuteLog(commit_length);
-
-                // execute all the logs until req_commit_length
-                // for (int i = commit_length; i < req_commit_length; i++) {
-                //     ExecuteLog(i); 
-                // }
             }
         }
         log_res.SetLogResponse(factory_id, current_term, req_prefix_length + 1, 1); // set yes reponse
@@ -626,7 +591,6 @@ LogResponse ServerMetadata::GetLogResponse(LogRequest log_req) {
         log_res.SetLogResponse(factory_id, current_term, 0, 0); // set no response
     }
 
-    // std::cout << "Heartbeat received" << std::endl;
     SetHeartbeat(true);
     return log_res;
 }
@@ -646,7 +610,7 @@ void ServerMetadata::AppendLog(int op_term, int customer_id, int order_num) {
 void ServerMetadata::ExecuteLog(int idx) {
     int customer_id, order_num;
     
-    MapOp op = GetOp(idx); // check the index of the op
+    MapOp op = GetOp(idx); // get op at idx
     std::cout << "found the op log!" << std::endl;
     customer_id = op.arg1;
     order_num = op.arg2;
@@ -721,137 +685,3 @@ std::deque<std::shared_ptr<ClientSocket>> ServerMetadata::GetNeighborSockets() {
 int ServerMetadata::GetNeighborSocketSize() {
     return neighbor_sockets.size();
 }
-
-
-
-
-/**
-int ServerMetadata::ReplicateLog(bool is_heartbeat) {
-
-    // upon replicating log, try reconnecting with the failed servers
-    TryReconnect();
-
-    // for each of the neighbors
-        // get the length of the item sent to the neighbor
-    int prefix_length, prefix_term, op_term, op_arg1, op_arg2, i;
-    std::shared_ptr<ClientSocket> socket;
-    LogRequest log_req;
-    LogResponse log_res;
-    std::map<std::shared_ptr<ServerNode>, std::shared_ptr<ClientSocket>> new_node_socket;
-
-    int term, ack, success;
-    bool failed = false;
-    int num_alive = 0;
-    // int idx = 0;
-
-    for (auto it = node_socket.begin(); it != node_socket.end(); ++it) {
-        i = server_index_map[it->first->id];
-        socket = it->second;
-
-        prefix_length = sent_length[i];
-        prefix_term = GetPrefixTerm(prefix_length);
-
-        if (log_size == prefix_length) { // send emtpy heartbeat
-            log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
-                            commit_length, -1, -1, -1);
-            
-            // send the log to the follower
-            // std::cout << "Sending a simple heartbeat to: " << it->first->id << std::endl;
-            if (!SendIdentifier(APPENDLOG_RPC, socket)) { // follower failure
-                CleanNodeState(i);
-                failed_neighbors.push_back(it->first);
-                continue;
-            }
-            if (!SendLogRequest(log_req, socket)) { // follower failure
-                CleanNodeState(i);
-                failed_neighbors.push_back(it->first);
-                continue;
-            }
-            log_res = RecvLogResponse(socket); // add recover logic
-        }
-
-        else { // for all the unsent op, send to the followers
-            while (prefix_length < log_size) {
-
-                // update the prefix_term
-                prefix_term = GetPrefixTerm(prefix_length);
-
-                op_term = smr_log[prefix_length].term;
-                op_arg1 = smr_log[prefix_length].arg1;
-                op_arg2 = smr_log[prefix_length].arg2;
-                log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
-                                commit_length, op_term, op_arg1, op_arg2);
-
-                // std::cout << log_req << std::endl;
-                
-                // send the log to the follower
-                if (!SendIdentifier(APPENDLOG_RPC, socket)) {
-                    failed = true;
-                    CleanNodeState(i);
-                    failed_neighbors.push_back(it->first);
-                    break;
-                }
-                if (!SendLogRequest(log_req, socket)) {
-                    failed = true;
-                    CleanNodeState(i);
-                    failed_neighbors.push_back(it->first);
-                    break;
-                }
-
-                // update the prefix_length logRequest accordingly with the response
-                log_res = RecvLogResponse(socket);
-
-                // std::cout << "(" << idx++ << " idx) log request sent to: " << it->first->id 
-                //           << ", prefix_length: " << prefix_length << std::endl;
-                // std::cout << "ACK: " << log_res.GetAck() << std::endl;
-                // std::cout << "Sucess: " << log_res.GetSuccess() << std::endl;
-
-                term = log_res.GetCurrentTerm();
-                ack = log_res.GetAck();
-                success = log_res.GetSuccess();
-                // std::cout << "success: " << success << std::endl;
-
-                if (term == current_term && status == LEADER) {
-                    // std::cout << "1st condition called!" << std::endl;
-                    if (success) {
-                        sent_length[i] = ack;
-                        ack_length[i] = ack;
-                        prefix_length++;
-                        if (ack >= ack_length[i]) { // in case leader can commit
-                            CommitLog();
-                        }
-
-                    // TODO: FIX THE LOGIC 
-                    } else if (sent_length[i] > 0) { // send the previous log
-                        sent_length[i]--;
-                        prefix_length--;
-                    }
-                } else if (term > current_term) { // demote to the follower
-                    current_term = term;
-                    status = FOLLOWER;
-                    voted_for = -1;
-                    vote_received.clear();
-                    return 0;
-                }
-            }
-            // idx = 0;
-        }
-
-        if (failed) { // failed in the middle of sending the packets
-            failed = false;
-            continue;
-        }
-
-        num_alive += 1;
-        new_node_socket[it->first] = it->second; // add the mapping to the new
-    }
-    node_socket = new_node_socket; // change with the new socket mapping
-
-    // // if the number of live servers are less than the majority, demote to the candidate
-    // if (num_alive * 2 < GetPeerSize()) {
-    //     SetStatus(CANDIDATE);
-    // }
-
-    return 1;
-}
-*/
