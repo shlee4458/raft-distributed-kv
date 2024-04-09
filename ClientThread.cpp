@@ -72,14 +72,14 @@ ThreadBody(std::string ip, int port, int customer_id, int num_requests, int requ
 					return;
 				}
 
-				std::cout << "Sending Update Request" << std::endl;
+				// std::cout << "Sending Update Request" << std::endl;
 				request.SetRequest(customer_id, i, UPDATE_REQUEST);
 				laptop = stub.Order(request);
 				laptop.Print();
 
-				// Primary server failure; exit gracefully
+				// Server failure; exit gracefully
 				if (laptop.GetCustomerId() == LAPTOP_DEFAULT) {
-					std::cout << "Primary server went down, graceuflly exiting" << std::endl;
+					std::cout << "Server went down, graceuflly exiting" << std::endl;
 					exit_requested = true;
 				}
 				break;

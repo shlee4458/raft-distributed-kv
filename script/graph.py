@@ -2,11 +2,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 def createLatencyGraph(df) -> None:
-    plt.plot(df['num_servers'], df['avg_latency'], label='Average Latency', marker='o')
+    plt.plot(df['num_threads'], df['avg_latency'], label='Average Latency', marker='o')
 
     # Add labels and title
-    plt.xlabel('Number of Servers')
-    plt.ylabel('Latency (us)')
+    plt.xlabel('Number of Threads')
+    plt.ylabel('Latency (ms)')
 
     # Add legend
     plt.legend()
@@ -17,8 +17,9 @@ def createLatencyGraph(df) -> None:
 
 if __name__ == "__main__":
     # Read data into panda dataframe
-    column_name = ["num_servers", "avg_latency"]
-    file = "../data.csv"
+    column_name = ["num_threads", "avg_latency"]
+    file = "../data_preprocessed.csv"
     df = pd.read_csv(file, header=None, names=column_name)
-    df_grouped = df.groupby("num_servers").mean().reset_index()
+    df_grouped = df.groupby("num_threads").mean().reset_index()
+    df_grouped["avg_latency"] = df_grouped["avg_latency"] / 1000
     createLatencyGraph(df_grouped)

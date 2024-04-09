@@ -364,7 +364,6 @@ RequestVoteResponse ServerMetadata::RecvVoteResponse(std::shared_ptr<ClientSocke
  * Replicate Log RPC
 */
 
-
 int ServerMetadata::ReplicateLog() {
 
     TryReconnect();
@@ -395,7 +394,7 @@ int ServerMetadata::ReplicateLog() {
             prefix_term = GetPrefixTerm(prefix_length);
 
             if (log_size == prefix_length) {
-                if (first_round || rand_num == 1) {
+                if (first_round || rand_num == 1) { // experimenting with the randomization of sending heartbeat
                     log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
                                     commit_length, -1, -1, -1);
                     
@@ -429,7 +428,7 @@ int ServerMetadata::ReplicateLog() {
                 log_req.SetLogRequest(factory_id, current_term, prefix_length, prefix_term,
                                 commit_length, op_term, op_arg1, op_arg2);
 
-                std::cout << log_req << std::endl;
+                // std::cout << log_req << std::endl;
                 
                 // send the log to the follower
                 if (!SendIdentifier(APPENDLOG_RPC, socket)) {
@@ -490,7 +489,7 @@ int ServerMetadata::ReplicateLog() {
         }
         first_round = false;
         num_change = 0;
-        std::cout << "Num of socket in the new node_socket: " << node_socket.size() << std::endl;
+        // std::cout << "Num of socket in the new node_socket: " << node_socket.size() << std::endl;
         node_socket = new_node_socket;
     }
     return 1;

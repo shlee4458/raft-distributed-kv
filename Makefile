@@ -41,7 +41,6 @@ LFLAGS := -pthread
 TARGET := server client
 
 # address sanitizer segfault debug 
-SANITIZEFLAG := -fsanitize=address
 
 #-------------------------------------------------------------------------------
 # 2. What to build and how to build them
@@ -88,7 +87,7 @@ debug: $(TARGET)
 #    it will look for another rules to create the object (.o) files
 
 server: $(SVR_OBJS) $(CMN_OBJS) ClientSocket.o
-	$(CXX) $(LFLAGS) $(SANITIZEFLAG) -o $@ $^ 
+	$(CXX) $(LFLAGS) -o $@ $^ 
 
 # This rule defines how to build the server specific object files.
 # To build object files, corresponding source code files (i.e., cpp and h files) are
@@ -97,20 +96,20 @@ server: $(SVR_OBJS) $(CMN_OBJS) ClientSocket.o
 #   g++ -Wall -std=c++0x -c ServerXXX1.cpp ServerXXX2.cpp ...
 
 $(SVR_OBJS): $(SVR_SRCS) $(SVR_HDRS)
-	$(CXX) $(CFLAGS) $(DFLAGS) $(SANITIZEFLAG) -c $(SVR_SRCS)
+	$(CXX) $(CFLAGS) $(DFLAGS) -c $(SVR_SRCS)
 
 
 # Same applies to the client program.
 client: $(CLNT_OBJS) $(CMN_OBJS) ServerMetadata.o
-	$(CXX) $(LFLAGS) $(SANITIZEFLAG) -o $@ $^ 
+	$(CXX) $(LFLAGS) -o $@ $^ 
 
 $(CLNT_OBJS): $(CLNT_SRCS) $(CLNT_HDRS)
-	$(CXX) $(CFLAGS) $(DFLAGS) $(SANITIZEFLAG) -c $(CLNT_SRCS)
+	$(CXX) $(CFLAGS) $(DFLAGS) -c $(CLNT_SRCS)
 	
 
 # This rule compiles the common source code into object files.
 $(CMN_OBJS): $(CMN_SRCS) $(CMN_HDRS)
-	$(CXX) $(CFLAGS) $(DFLAGS) $(SANITIZEFLAG) -c $(CMN_SRCS)
+	$(CXX) $(CFLAGS) $(DFLAGS) -c $(CMN_SRCS)
 
 # This defines how you will clean up the compiled files.
 # You can type "make clean" in the command line to delete all compiled files

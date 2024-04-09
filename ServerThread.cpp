@@ -240,7 +240,6 @@ void LaptopFactory::LeaderThread(int id) {
 	}
 }
 
-
 void LaptopFactory::TimeoutThread() {
 	int timeout, current_term, status;
 	bool heartbeat;
@@ -249,22 +248,16 @@ void LaptopFactory::TimeoutThread() {
 
 	// if the current state is;
 	while (true) {
-		// ml.lock();
 		current_term = metadata->GetCurrentTerm();
 		status = metadata->GetStatus();
-		// ml.unlock();
 		timeout = GetRandomTimeout();
 		switch (status) {
 			case FOLLOWER:
 				std::cout << "Current term: " << current_term << " - " << "Follower" << std::endl;
-				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), [&]{ return metadata->GetHeartbeat();});
-				tl.unlock();
-
 				ml.lock();
 				heartbeat = metadata->GetHeartbeat();
 				if (heartbeat) {
-					// std::cout << "Heartbeat was received!" << std::endl;
 					metadata->SetHeartbeat(false);
 				} else {
 					std::cout << "I became a candidate!" << std::endl;
@@ -278,11 +271,9 @@ void LaptopFactory::TimeoutThread() {
 				ml.lock();
 				metadata->RequestVote();
 				ml.unlock();
-				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(timeout), // vote time outs
 										[&]{ return metadata->GetStatus() == LEADER // elected as the leader
 													|| metadata->GetStatus() == FOLLOWER; }); // found leader
-				tl.unlock();
 				ml.lock();
 				status = metadata->GetStatus();
 				ml.unlock();
@@ -291,15 +282,11 @@ void LaptopFactory::TimeoutThread() {
 				}
 				break;
 			case LEADER:
-				// for every 100ms send replicatelog
-				// std::cout << "Current term: " << current_term << " - " << "Leader" << std::endl;
 				ml.lock();
 				metadata->ReplicateLog();
 				ml.unlock();
-				tl.lock();
 				timeout_cv.wait_for(tl, std::chrono::milliseconds(HEARTBEAT_TIME), 
 										[&]{ return metadata->GetStatus() == FOLLOWER; });
-				tl.unlock();
 				ml.lock();
 				status = metadata->GetStatus();
 				ml.unlock();

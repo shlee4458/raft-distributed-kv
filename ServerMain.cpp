@@ -57,9 +57,12 @@ int main(int argc, char *argv[]) {
 	LaptopFactory factory(std::move(metadata));
 	
 	// create the leader thread
-	std::thread leader_thread(&LaptopFactory::LeaderThread, 
-			&factory, engineer_cnt++);
-	thread_vector.push_back(std::move(leader_thread));
+	for (int i = 0; i < 4; i ++) {
+		std::thread leader_thread(&LaptopFactory::LeaderThread, 
+				&factory, engineer_cnt++);
+		thread_vector.push_back(std::move(leader_thread));
+	}
+
 
 	// create the follower admin thread
 	// std::thread follower_thread(&LaptopFactory::FollowerThread,

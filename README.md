@@ -1,4 +1,4 @@
-<h1 align="center"> Replicated Distributed Systems using Primary-Backup protocol </h1>
+<h1 align="center"> Replicated Key-value system using Raft Consensus Algorithm </h1>
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
@@ -9,7 +9,7 @@
 - [Getting Started](#getting-started)
 - [Class Structure](#class-structure)
 - [Implementation](#implementation)
-- [Expected Behavior](#expected-behavior)
+- [Evaluation](#evaluation)
 - [Experiment](#experiment)
 - [Further Optimization](#further-optimization)
 
@@ -148,28 +148,50 @@ Main features of the system have been implemented based on the original <a src="
 |:--:|:--:|
 | *Request Vote RPC* | *Append Log RPC* |
 
+## Server Routing
+| ![IdentifierHandler](./img/IdentifierHandler.png) | ![ServerHandler](./img/ServerHandler.png) |
+|:--:|:--:|
+| *Identifier Handler* | *Server Handler* |
+
+## Timeout Thread
+| ![TimeoutThread](./img/TimeoutThread.png) | ![StateMachine](./img/StateMachine.png) |
+|:--:|:--:|
+| *TimeoutThread* | *State Machine* |
 
 <br>
 
-# Expected Behavior (Evaluation)
-- When servers join, one of the server is elected as the Leader and other two stays as Follower.
-- When all followers die, leader stays as leader and wait for other servers to join
-- When one of the follower server fails and rejoins, logs are recovered by the leader
-- When leader fails, remaining server should elect a new leader
-- Update request from client to the follower should be handled by the leader
-- After update is complete, all servers have same customer_id : order_number mapping
-- All followers should receive heartbeat every 200ms ~ 300ms
+# Evaluation
+- (1) When servers join, one of the server is elected as the Leader and other two stays as Follower.
+    - As stated in the getting started, run 3 servers in a separate cluster. You should see one of the server with console printing "Set itself as the leader", while other two consoles are printing "Current term X: Follower", converged in the same "X" value
+- (2) When all followers die, leader stays as leader and wait for other servers to join.
+    - Try killing two terminals that are printing "Current term X: Follower". The leader program does not crash.
+- (3) (Connected to (2)) Remaining leader should be able to process read request from the client.
+    - Send a read request from a client by calling to the only surviving leader server "./client 10.200.125.73 12345 1 1 3"(assuming .73 is the leader and only live server). Assuming no update request was sent to the servers, client should not receive any customer_id to order_num mapping.
+- (4) (Connected to (2)) Remaining leader should take the order from the client, but should not commit the log until at least one server(2 servers compose majority of the 3 total servers) joins.
+    - Send an update request from a client to the only surviving leader server by calling "./client 10.200.125.73 12345 1 1 1" (assuming .73 is the leader and only live server), and then read the last order number of the customer by sending a read request from the client; "./client 10.200.125.73 12345 1 1 3". It should not have the record for the customer.
+- (5) When one or all of the followers server fails and rejoins, logs are recovered by the leader.
+    - When all the servers are alive, send the update request to the leader by calling "./client 10.200.125.73 12345 1 10 1"(assuming 73 was the leader). After the operation is finished, kill two follower servers. (wait until the socket is available, if applicable) Restart both the killed servers. After the replication was recovered(when the replication is recovered, the follower should start printing out "Current term X: Follower" message), send read request on each servers by calling "./client 10.200.125.71 12345 1 1 3", "./client 10.200.125.72 12345 1 1 3", "./client 10.200.125.73 12345 1 1 3". It should equally say customer_id: 0, order_num: 9.
+- (6) (Connected to (5)) When failed follower rejoins, and the follower dies again while the logs are being replicated from the leader. If the follower joins again after the second failure, leader server should not break and send the log replication starting from the first log to the end to the recovered servers.
+    - Do the same from the (5), and before the part that says "After the replication was recovered", kill the follower server again. Now, do the same stated in (5) and it should have the same expected outcome of (5).
+- (7) When leader fails, remaining server should elect a new leader.
+    - Given that there were a leader and two followers, if the leader is killed, one of the follower server should be elected as the leader. That leader server should print "Set itself as the leader!".
+- (8) Newly elected leader should have the same capablility with the initial leader.
+    - Testing (2), (3), (4), (5), (6) to the new server should work as expected.
+- (9) Update request from client to the follower should be handled by the leader.
+    - Try sending an update request to the non-leader server. If the leader is .73, send update request to .72 with "./client 10.200.125.72 12345 1 10 1". After the operation is done, send read request on each server by calling "./client 10.200.125.71 12345 1 1 3", "./client 10.200.125.72 12345 1 1 3", "./client 10.200.125.73 12345 1 1 3" on each respective server. It should equally say customer_id: 0, order_num: 9.
+- (10) All followers should receive heartbeat every 200ms ~ 300ms
+    - "Current term X: Follower" should constantly be printed in all the follower servers.
 
 
 # Experiment
-The experiment was conducted to understand performance changes based on the number of servers. Each experiment was conducted 3 times to smooth out the affect of external factors. 4 client threads were used for 40,000 write orders per customer.
+<i>Note: All experiment was conducted without any debug statement.</i> The experiment was conducted to understand performance changes based on the number of threads created by the client. Each experiment was conducted 3 times to smooth out the affect of external factors. For x number of threads, 1000 write orders were sent to the leader server.
 
 ## Latency Graph
-<i>Unit: latency - microseconds</i>
+<i>Unit: latency - miliseconds</i>
 ### Experiment
 <img alt="Experiment 1 Table" title="Experiment 1 Table" src="img/latency_graph.png" width="500">
 
-Increase in the number of servers resulted in higher latency. We can visualize the trade off of reliability and latency through replicated servers.
+We can visualize the latency increase as we increase the number of threads created by the client. One thing I have noticed is that it seems like a single replication message is sent in a single window of the heartbeat instead of multiple messages sent within that timeframe, which may be causing high latency. The slope of the linear graph is around 160ms/thread, which is not far off from the interval heartbeat is sent from leader to the followers. Also, if a single order is sent, the latency is within the range of 3000 us, which indicates additional replication results in the suboptimal performance. This may be due to an implementation error, and needs to be remedied.
 
 <br>
 
@@ -179,4 +201,5 @@ Increase in the number of servers resulted in higher latency. We can visualize t
 - Optimize usage of locks: Performance may be not optimized due to overusage of locks.
 - Add persistent memory for each server: In case more than half of the server dies, consensus may get reverted. In order to prevent this, persistent memory for each server is required.
 - Membership change: For the current design, server starts with the pre configured membership of other server information. This may not scale well, when other server may join and the current server may leave.
-- Develop analytical model to simulate, and test edge cases: there are lots of edge cases that I was not able to test, especially network partition. 
+- Develop analytical model to simulate, and test edge cases: there are lots of edge cases that I was not able to test, especially network partition.
+- Include solution for corner cases including, leader failure while the customer order is being sent
