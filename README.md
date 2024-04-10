@@ -121,7 +121,7 @@ Main features of the system have been implemented based on the original <a src="
 
 (3) Other Servers -> Candidate: When the server receives the object, it creates the response with either vote or not vote; the receiving server will vote if cand_current_term >= cur_term of the receiving server and it is either the case that the last committed log in the candidate is bigger than the receiving server or is case the last committed log in the leader is same as the receiving server and the log_size of the candidate server. In other cases, receiving server will vote no.
 
-(3) Candidate update state: When the candidate receives the response, if the current vote counts as the majority vote, it will change its state to the leader. If the voter's current term is bigger than the leader, candidate will demote itself as the follower. If no leader was elected, it will stay as the candidate. For optimization, if there is a live server and no vote is received, I demoted the server to a follower server.
+(4) Candidate update state: When the candidate receives the response, if the current vote counts as the majority vote, it will change its state to the leader. If the voter's current term is bigger than the leader, candidate will demote itself as the follower. If no leader was elected, it will stay as the candidate. For optimization, if there is a live server and no vote is received, I demoted the server to a follower server.
 
 | ![RequestVoteMessage](./img/RequestVoteMessage.png) | ![RequestVoteResponse](./img/RequestVoteResponse.png) |
 |:--:|:--:|
@@ -135,6 +135,10 @@ Main features of the system have been implemented based on the original <a src="
 (3) Other servers -> Leader: If the receiving server was a candidate or leader, and the current_term of the server is equal to or less than the leader's current term, it demotes to the follower. If the log_size of the receiver is bigger than or equal to the prefix_length saved in the leader, and the last log's prefix term is equal to the last term of the receiver, it can log. When the server can log, if the log size of the receiver is bigger than the prefix_length, it drops all the uncommitted log in the current receiving server. If the log request is not a simple heartbeat, it appends the log, and commits the log if the leader's last commited log is bigger than the receiving server's committed log. Lastly, it sends the append log success message along with the committed length. Otherwise, sends append failure message.
 
 (4) Leader update state: If the leader's current term is smaller than the server that sent the Log Response, the leader will demote itself to the follower server. Otherwise, if the log response says success, it will update the sent_length, and ack_length datastructure accordingly.
+
+| ![LogRequest](./img/LogRequest.png) | ![LogResponse](./img/LogResponse.png) |
+|:--:|:--:|
+| *Log Request Object* | *Log Response Object* |
 
 ## Adjustment of the original Raft Algorithm
 * Heartbeat timeout interval: Instead of recommended use of 150ms ~ 300ms interval for heartbeat timeout, I decided to opt for 200ms ~ 300ms interval value. This decision was made to make sure unnecessary election does not happen due to network delay.
